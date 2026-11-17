@@ -1,120 +1,194 @@
 extends Node2D
-## Dibuja el mapa 2D visto desde arriba: campo, manzanas, calles,
-## rotonda, nombres de calles y lugares de referencia.
-## Se dibuja una sola vez (no consume rendimiento en cada fotograma).
+## Mapa real de Miguelturra (datos de OpenStreetMap) con estética de
+## central táctica: fondo oscuro, calles iluminadas, edificios y zonas.
+## Las calles y edificios se crean una sola vez como nodos estáticos,
+## así el Fire TV no tiene que recalcularlos en cada fotograma.
 
-const MapaPrueba = preload("res://data/map/mapa_prueba.gd")
-const RedViaria = preload("res://scripts/routing/red_viaria.gd")
+const COLOR_FONDO := Color("0f151c")
 
-const COLOR_CAMPO := Color("27321f")
-const COLOR_FONDO := Color("1b2430")
-const COLOR_EDIFICIO := Color("2c3a4d")
-const COLOR_BORDE_CALLE := Color("3f4b5c")
-const COLOR_CALLE := Color("66758a")
-const COLOR_TEXTO_CALLE := Color("e8eef6")
+const ESTILO_ZONAS := {
+	# tipo: [color, orden de dibujo]
+	"campo": [Color("141e17"), 0],
+	"residencial": [Color("1a2430"), 1],
+	"industrial": [Color("211f2b"), 1],
+	"comercial": [Color("23222e"), 1],
+	"aparcamiento": [Color("1d2632"), 2],
+	"plaza": [Color("27323f"), 2],
+	"deporte": [Color("173028"), 2],
+	"parque": [Color("15301f"), 2],
+	"agua": [Color("0f3350"), 3],
+}
 
-var red: RedViaria
+const ESTILO_VIAS := {
+	# tipo: [color, ancho en metros, orden]
+	"path": [Color("33404d"), 2.5, 0], "footway": [Color("33404d"), 2.5, 0],
+	"cycleway": [Color("2f4a52"), 2.5, 0], "track": [Color("39432f"), 4.0, 0],
+	"service": [Color("3a4859"), 6.0, 1], "pedestrian": [Color("3e4858"), 8.0, 1],
+	"living_street": [Color("475870"), 10.0, 2], "residential": [Color("475870"), 10.0, 2],
+	"unclassified": [Color("53657e"), 11.0, 3],
+	"tertiary": [Color("6a7f9f"), 14.0, 4], "tertiary_link": [Color("6a7f9f"), 12.0, 4],
+	"secondary": [Color("7a8fb0"), 15.0, 4], "secondary_link": [Color("7a8fb0"), 12.0, 4],
+	"primary": [Color("8aa0c2"), 16.0, 4], "primary_link": [Color("8aa0c2"), 12.0, 4],
+	"trunk": [Color("9ab0d2"), 18.0, 4], "trunk_link": [Color("9ab0d2"), 12.0, 4],
+	"motorway": [Color("9ab0d2"), 20.0, 4], "motorway_link": [Color("9ab0d2"), 12.0, 4],
+}
+
+const ICONOS := {
+	# tipo: [letra, color]
+	"sanidad": ["+", Color("2ecc71")], "farmacia": ["F", Color("2ecc71")],
+	"ayuntamiento": ["Ay", Color("c9a227")], "policia": ["P", Color("4d96ff")],
+	"bomberos": ["B", Color("e74c3c")], "colegio": ["C", Color("9b8cff")],
+	"iglesia": ["I", Color("d9c8a9")], "teatro": ["T", Color("e0a96d")],
+	"gasolinera": ["G", Color("bdbdbd")], "supermercado": ["S", Color("f2994a")],
+	"restaurante": ["R", Color("f2c94c")], "bar": ["b", Color("f2c94c")],
+	"deporte": ["D", Color("56cfe1")], "comercio": ["c", Color("f2c94c")],
+	"edificio": ["E", Color("aab7c4")],
+}
+
+var datos: Dictionary = {}
+var tamano := Vector2(3000, 3000)
 var fuente: Font
+var capa_nombres: Node2D
+var capa_iconos: Node2D
+var bases: Array = []   # [{nombre, pos, color, letra}]
 
 
 func _ready() -> void:
 	fuente = ThemeDB.fallback_font
+	tamano = Vector2(float(datos["tamano"][0]), float(datos["tamano"][1]))
+	_crear_zonas()
+	_crear_tren()
+	_crear_vias()
+	_crear_edificios()
+	capa_iconos = Node2D.new()
+	capa_iconos.draw.connect(_dibujar_iconos)
+	add_child(capa_iconos)
+	capa_nombres = Node2D.new()
+	capa_nombres.draw.connect(_dibujar_nombres)
+	add_child(capa_nombres)
 	queue_redraw()
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, MapaPrueba.TAMANO), COLOR_CAMPO)
-	# Casco urbano
-	draw_rect(Rect2(Vector2(220, 220), Vector2(1660, 1060)), COLOR_FONDO)
-	_dibujar_manzanas()
-	_dibujar_calles()
-	_dibujar_nombres_calles()
-	_dibujar_lugares()
+	draw_rect(Rect2(Vector2.ZERO, tamano), COLOR_FONDO)
 
 
-func _dibujar_manzanas() -> void:
-	var cols: Array = MapaPrueba.COLUMNAS
-	var filas: Array = MapaPrueba.FILAS
-	for i in range(cols.size() - 1):
-		for j in range(filas.size() - 1):
-			var x0: float = cols[i]
-			var x1: float = cols[i + 1]
-			var y0: float = filas[j]
-			var y1: float = filas[j + 1]
-			var r := Rect2(x0 + 28, y0 + 28, x1 - x0 - 56, y1 - y0 - 56)
-			var clave := "%d,%d" % [i, j]
-			var tipo: String = MapaPrueba.MANZANAS_ESPECIALES.get(clave, "viviendas")
-			match tipo:
-				"plaza":
-					draw_rect(r, Color("3b4a3c"))
-					draw_circle(r.get_center(), 34, Color("4f6a52"))
-				"parque":
-					draw_rect(r, Color("244a2c"))
-					for k in 9:
-						var p := r.position + Vector2(40 + (k % 3) * 85, 40 + (k / 3) * 70)
-						draw_circle(p, 16, Color("2f6b3a"))
-				"industrial":
-					draw_rect(r, Color("2a2d38"))
-					draw_rect(Rect2(r.position + Vector2(14, 14), Vector2(r.size.x * 0.55, r.size.y * 0.45)), Color("3d4152"))
-					draw_rect(Rect2(r.position + Vector2(14, r.size.y * 0.55), Vector2(r.size.x - 28, r.size.y * 0.38)), Color("3d4152"))
-				_:
-					var mitad := r.size / 2.0
-					for dx in 2:
-						for dy in 2:
-							var pos_edificio := r.position + Vector2(dx * mitad.x, dy * mitad.y) + Vector2(6, 6)
-							draw_rect(Rect2(pos_edificio, mitad - Vector2(12, 12)), COLOR_EDIFICIO)
+func mostrar_nombres(si: bool) -> void:
+	if capa_nombres.visible != si:
+		capa_nombres.visible = si
 
 
-func _dibujar_calles() -> void:
-	for t in red.tramos:
-		var a: Vector2 = red.posiciones[t[0]]
-		var b: Vector2 = red.posiciones[t[1]]
-		draw_line(a, b, COLOR_BORDE_CALLE, 44.0)
-	for nombre in red.posiciones:
-		draw_circle(red.posiciones[nombre], 22.0, COLOR_BORDE_CALLE)
-	for t in red.tramos:
-		var a: Vector2 = red.posiciones[t[0]]
-		var b: Vector2 = red.posiciones[t[1]]
-		draw_line(a, b, COLOR_CALLE, 36.0)
-	for nombre in red.posiciones:
-		draw_circle(red.posiciones[nombre], 18.0, COLOR_CALLE)
-	# Rotonda
-	var rotonda: Vector2 = red.posiciones["R"]
-	draw_circle(rotonda, 56.0, COLOR_CALLE)
-	draw_circle(rotonda, 24.0, Color("2f5a37"))
+func anadir_base(nombre: String, pos: Vector2, color: Color, letra: String) -> void:
+	bases.append({"nombre": nombre, "pos": pos, "color": color, "letra": letra})
+	if capa_iconos:
+		capa_iconos.queue_redraw()
+		capa_nombres.queue_redraw()
 
 
-func _dibujar_nombres_calles() -> void:
-	# Un rótulo por calle, en el tramo central de cada una
-	var por_calle := {}
-	for t in red.tramos:
-		var calle: String = t[2]
-		if not por_calle.has(calle):
-			por_calle[calle] = []
-		por_calle[calle].append(t)
-	for calle in por_calle:
-		var lista: Array = por_calle[calle]
-		var t: Array = lista[lista.size() / 2]
-		var a: Vector2 = red.posiciones[t[0]]
-		var b: Vector2 = red.posiciones[t[1]]
-		var medio := (a + b) / 2.0
+# ------------------------------------------------------------------ CREACIÓN
+
+func _puntos(lista: Array) -> PackedVector2Array:
+	var p := PackedVector2Array()
+	p.resize(lista.size() / 2)
+	for i in p.size():
+		p[i] = Vector2(float(lista[i * 2]), float(lista[i * 2 + 1]))
+	return p
+
+
+func _crear_zonas() -> void:
+	var zonas: Array = datos["zonas"].duplicate()
+	zonas.sort_custom(func(a, b): return ESTILO_ZONAS.get(a["tipo"], [Color.BLACK, 1])[1] < ESTILO_ZONAS.get(b["tipo"], [Color.BLACK, 1])[1])
+	for z in zonas:
+		var estilo: Array = ESTILO_ZONAS.get(z["tipo"], [Color("1a2430"), 1])
+		var poly := Polygon2D.new()
+		poly.polygon = _puntos(z["puntos"])
+		poly.color = estilo[0]
+		add_child(poly)
+
+
+func _crear_tren() -> void:
+	for t in datos["tren"]:
+		var l := Line2D.new()
+		l.points = _puntos(t)
+		l.width = 5.0
+		l.default_color = Color("4b525e")
+		add_child(l)
+
+
+func _crear_vias() -> void:
+	var vias: Array = datos["vias"].duplicate()
+	vias.sort_custom(func(a, b): return ESTILO_VIAS.get(a["tipo"], [Color.BLACK, 1.0, 2])[2] < ESTILO_VIAS.get(b["tipo"], [Color.BLACK, 1.0, 2])[2])
+	for v in vias:
+		var estilo: Array = ESTILO_VIAS.get(v["tipo"], [Color("475870"), 10.0, 2])
+		var l := Line2D.new()
+		l.points = _puntos(v["puntos"])
+		l.width = estilo[1]
+		l.default_color = estilo[0]
+		l.joint_mode = Line2D.LINE_JOINT_ROUND
+		l.begin_cap_mode = Line2D.LINE_CAP_ROUND
+		l.end_cap_mode = Line2D.LINE_CAP_ROUND
+		add_child(l)
+
+
+func _crear_edificios() -> void:
+	for e in datos["edificios"]:
+		var poly := Polygon2D.new()
+		poly.polygon = _puntos(e)
+		poly.color = Color("2f425e")
+		add_child(poly)
+
+
+# ------------------------------------------------------------------ DIBUJO
+
+func _dibujar_iconos() -> void:
+	for l in datos["lugares"]:
+		var tipo: String = l["tipo"]
+		if not ICONOS.has(tipo):
+			continue
+		var icono: Array = ICONOS[tipo]
+		_icono(Vector2(float(l["x"]), float(l["y"])), icono[0], icono[1], 13.0)
+	for b in bases:
+		_icono(b["pos"], b["letra"], b["color"], 17.0)
+
+
+func _icono(p: Vector2, letra: String, color: Color, radio: float) -> void:
+	capa_iconos.draw_circle(p, radio + 3.0, Color(0, 0, 0, 0.6))
+	capa_iconos.draw_circle(p, radio, color)
+	capa_iconos.draw_string(fuente, p + Vector2(-radio, radio * 0.45), letra, HORIZONTAL_ALIGNMENT_CENTER, radio * 2.0, int(radio * 1.15), Color.BLACK)
+
+
+func _dibujar_nombres() -> void:
+	# Nombre de cada calle sobre su tramo recto más largo
+	var mejor := {}
+	for v in datos["vias"]:
+		var nombre: String = v["nombre"]
+		if nombre == "" or v["tipo"] in ["path", "footway", "cycleway", "track"]:
+			continue
+		var p := _puntos(v["puntos"])
+		for i in range(1, p.size()):
+			var largo := p[i - 1].distance_to(p[i])
+			if not mejor.has(nombre) or largo > mejor[nombre][2]:
+				mejor[nombre] = [p[i - 1], p[i], largo]
+	for nombre in mejor:
+		var a: Vector2 = mejor[nombre][0]
+		var b: Vector2 = mejor[nombre][1]
+		if mejor[nombre][2] < 45.0:
+			continue
 		var angulo := (b - a).angle()
 		if angulo > PI / 2.0 or angulo < -PI / 2.0:
 			angulo += PI
-		draw_set_transform(medio, angulo, Vector2.ONE)
-		draw_string(fuente, Vector2(-160, 7), calle, HORIZONTAL_ALIGNMENT_CENTER, 320, 19, COLOR_TEXTO_CALLE)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-
-func _dibujar_lugares() -> void:
-	for l in MapaPrueba.LUGARES:
-		var p: Vector2 = l["pos"]
-		var letra: String = l["letra"]
-		var color: Color = l["color"]
-		if letra == "":
-			draw_string(fuente, p + Vector2(-150, 0), l["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 22, color)
-			continue
-		draw_circle(p, 18.0, color)
-		draw_arc(p, 18.0, 0.0, TAU, 24, Color(0, 0, 0, 0.7), 2.0)
-		draw_string(fuente, p + Vector2(-18, 7), letra, HORIZONTAL_ALIGNMENT_CENTER, 36, 18, Color.BLACK)
-		draw_string(fuente, p + Vector2(-110, 40), l["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 220, 16, Color("cfd9e6"))
+		capa_nombres.draw_set_transform((a + b) / 2.0, angulo, Vector2.ONE)
+		capa_nombres.draw_string_outline(fuente, Vector2(-200, 6), nombre, HORIZONTAL_ALIGNMENT_CENTER, 400, 18, 4, Color("0f151c"))
+		capa_nombres.draw_string(fuente, Vector2(-200, 6), nombre, HORIZONTAL_ALIGNMENT_CENTER, 400, 18, Color("c3d0df"))
+	capa_nombres.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# Nombres de lugares
+	for l in datos["lugares"]:
+		var p := Vector2(float(l["x"]), float(l["y"]))
+		var desplaz := Vector2(-150, 34) if ICONOS.has(l["tipo"]) else Vector2(-150, 6)
+		var color := Color("e8eef6") if ICONOS.has(l["tipo"]) else Color("8fd3a0")
+		capa_nombres.draw_string_outline(fuente, p + desplaz, l["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 15, 4, Color("0f151c"))
+		capa_nombres.draw_string(fuente, p + desplaz, l["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 15, color)
+	for b in bases:
+		var p: Vector2 = b["pos"] + Vector2(-150, 40)
+		capa_nombres.draw_string_outline(fuente, p, b["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 17, 4, Color("0f151c"))
+		capa_nombres.draw_string(fuente, p, b["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 17, b["color"])

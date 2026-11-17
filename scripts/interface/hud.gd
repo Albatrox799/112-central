@@ -55,10 +55,46 @@ func _ready() -> void:
 	_crear_barra_superior()
 	_crear_notificaciones()
 	_crear_barra_ayuda()
+	_crear_barra_unidades()
 	_crear_debug()
 	_crear_aviso_llamada()
 	_crear_ventana_llamada()
 	_crear_panel_lateral()
+	_crear_calibracion()
+	var osm := _etiqueta("Mapa: © colaboradores de OpenStreetMap", 14, Color(0.8, 0.85, 0.9, 0.7))
+	osm.position = Vector2(ANCHO - 300, ALTO - 62)
+	raiz.add_child(osm)
+
+
+var panel_calibracion: PanelContainer
+var texto_calibracion: Label
+
+
+func _crear_calibracion() -> void:
+	panel_calibracion = PanelContainer.new()
+	panel_calibracion.position = Vector2(240, 220)
+	panel_calibracion.custom_minimum_size = Vector2(800, 0)
+	panel_calibracion.add_theme_stylebox_override("panel", _caja(Color(0.04, 0.07, 0.11, 0.98), 3, 30, Color("ffd166"), 12))
+	texto_calibracion = _etiqueta("", 30, Color.WHITE)
+	texto_calibracion.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	texto_calibracion.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel_calibracion.add_child(texto_calibracion)
+	panel_calibracion.visible = false
+	raiz.add_child(panel_calibracion)
+
+
+func mostrar_calibracion(texto: String) -> void:
+	texto_calibracion.text = texto
+	panel_calibracion.visible = true
+	call_deferred("_ajustar", panel_calibracion)
+
+
+func ocultar_calibracion() -> void:
+	panel_calibracion.visible = false
+
+
+func calibrando() -> bool:
+	return panel_calibracion.visible
 
 
 # ---------------------------------------------------------------- ESTADO
@@ -77,7 +113,9 @@ func ventana_abierta() -> bool:
 
 func _process(_delta: float) -> void:
 	mira.visible = not ventana_abierta()
-	if get_tree().paused:
+	if calibrando():
+		etiqueta_ayuda.text = "Configuración del mando"
+	elif get_tree().paused:
 		etiqueta_ayuda.text = "Cruceta: elegir   ·   X: confirmar   ·   Options o Círculo: continuar"
 	elif panel_abierto():
 		etiqueta_ayuda.text = "Cruceta: elegir   ·   X: confirmar   ·   Círculo: volver"
@@ -318,7 +356,7 @@ func _crear_barra_superior() -> void:
 	var fila := HBoxContainer.new()
 	fila.add_theme_constant_override("separation", 24)
 	barra.add_child(fila)
-	fila.add_child(_etiqueta("CENTRAL 112 · MIGUELTURRA (prototipo)", 24, Color("ff6b6b")))
+	fila.add_child(_etiqueta("CENTRAL 112 · MIGUELTURRA", 24, Color("ff6b6b")))
 	var hueco := Control.new()
 	hueco.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fila.add_child(hueco)
@@ -368,6 +406,35 @@ func _crear_barra_ayuda() -> void:
 	etiqueta_ayuda = _etiqueta("", 18, Color("cfd9e6"))
 	etiqueta_ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	barra.add_child(etiqueta_ayuda)
+
+
+var barra_unidades: HBoxContainer
+
+const COLORES_ESTADO := {
+	"Disponible": Color("2e7d32"), "En desplazamiento": Color("e67e22"),
+	"Buscando el lugar": Color("d35400"), "En intervención": Color("c0392b"),
+	"Persecución": Color("8e44ad"), "Regresando": Color("2471a3"),
+}
+
+
+func _crear_barra_unidades() -> void:
+	barra_unidades = HBoxContainer.new()
+	barra_unidades.position = Vector2(14, ALTO - 84)
+	barra_unidades.add_theme_constant_override("separation", 8)
+	barra_unidades.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	raiz.add_child(barra_unidades)
+
+
+## lista: Array de [id, estado, color_servicio]
+func actualizar_unidades(lista: Array) -> void:
+	_vaciar(barra_unidades)
+	for u in lista:
+		var chip := PanelContainer.new()
+		var color_estado: Color = COLORES_ESTADO.get(u[1], Color("555555"))
+		chip.add_theme_stylebox_override("panel", _caja(Color(color_estado, 0.85), 3, 6, u[2], 6))
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(_etiqueta("%s · %s" % [u[0], u[1]], 16, Color.WHITE))
+		barra_unidades.add_child(chip)
 
 
 func _crear_debug() -> void:

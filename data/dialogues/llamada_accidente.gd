@@ -24,12 +24,11 @@ const DATOS := {
 	"incidente": {
 		"titulo": "Accidente de tráfico con herido",
 		"servicio": "ambulancia",
-		"nodo_real": "D3",
-		"pos_exacta": Vector2(1140, 900),
-		"pos_calle": Vector2(980, 870),
-		"radio_calle": 200.0,
-		"pos_zona": Vector2(1000, 760),
-		"radio_zona": 320.0,
+		# Lugar real del mapa (data/map/miguelturra.json) donde ocurre:
+		"lugar": "Iglesia de Nuestra Señora de la Asunción",
+		"radio_referencia": 140.0,
+		"desplazamiento_zona": Vector2(-230, 170),
+		"radio_zona": 400.0,
 	},
 	"nodos": {
 		"inicio": {
@@ -41,7 +40,7 @@ const DATOS := {
 			],
 		},
 		"donde": {
-			"texto": "Vale... vale. Estoy en Miguelturra, en una calle del centro, pero no sé cómo se llama.",
+			"texto": "Vale... vale. Estoy en Miguelturra, en el centro, cerca de la plaza... pero no sé cómo se llama la calle.",
 			"efectos": {"precision": 1},
 			"opciones": [
 				{"texto": "¿Ve algún comercio o edificio cerca de usted?", "ir_a": "comercio"},
@@ -104,17 +103,17 @@ const DATOS := {
 			],
 		},
 		"comercio": {
-			"texto": "Hay una farmacia justo enfrente... y un poco más allá, una panadería.",
-			"efectos": {"precision": 2, "info": "Frente a una farmacia, cerca de una panadería"},
+			"texto": "Estoy al lado de una iglesia muy grande... y un poco más allá está el cine, el Cine Paz.",
+			"efectos": {"precision": 2, "info": "Junto a la iglesia grande, cerca del Cine Paz"},
 			"opciones": [
-				{"texto": "¿Esa calle es la calle Mayor?", "ir_a": "confirmar_calle"},
+				{"texto": "¿Está en la calle Real, junto a la iglesia de la Asunción?", "ir_a": "confirmar_calle"},
 				{"texto": "¿Puede acercarse a la esquina y leer la placa?", "ir_a": "placa"},
 			],
 		},
 		"placa": {
 			"si_calma_menor": {"valor": 45, "ir_a": "placa_nerviosa"},
-			"texto": "Espere... Sí, pone «Calle Mayor». Estoy delante de la farmacia.",
-			"efectos": {"precision": 3, "info": "Calle Mayor, frente a la farmacia"},
+			"texto": "Espere... Sí, pone «Calle Real». Estoy al lado de la iglesia.",
+			"efectos": {"precision": 3, "info": "Calle Real, junto a la iglesia de la Asunción"},
 			"opciones": [
 				{"texto": "Perfecto, ya sé dónde está.", "ir_a": "consejos"},
 			],
@@ -127,8 +126,8 @@ const DATOS := {
 			],
 		},
 		"confirmar_calle": {
-			"texto": "¡Sí! Calle Mayor, eso es. Justo delante de la farmacia.",
-			"efectos": {"precision": 3, "calma": 5, "info": "Calle Mayor, frente a la farmacia"},
+			"texto": "¡Sí! Calle Real, eso es. Justo al lado de la iglesia.",
+			"efectos": {"precision": 3, "calma": 5, "info": "Calle Real, junto a la iglesia de la Asunción"},
 			"opciones": [
 				{"texto": "Perfecto, ya sé dónde está.", "ir_a": "consejos"},
 			],

@@ -13,7 +13,11 @@ Este prototipo sirve para comprobar dos cosas antes de construir el juego comple
 - Al cabo de un minuto aparece un **aviso automático**: un coche a 112 km/h. Puedes enviar la **patrulla P-01**, mantener la vigilancia o no intervenir.
 - Al terminar cada intervención verás un **informe con la valoración**.
 
-El mapa es un **esquema de prueba**. Los nombres de las calles son provisionales; el plano basado en el Miguelturra real llega en la Fase 2.
+**Versión 0.2:** el mapa es el **Miguelturra real** (datos de © colaboradores de OpenStreetMap, licencia ODbL), con sus calles, edificios, parques y lugares de referencia. Las bases de las unidades son ficticias.
+
+**Configurar el mando:** la primera vez que abras el juego con el mando conectado, te pedirá que pulses **X** y luego **Círculo**. Así funciona aunque tu Fire TV numere los botones de otra forma. Se puede repetir desde **Pausa → Configurar botones del mando**.
+
+Para regenerar el mapa desde un archivo de OpenStreetMap: `python3 tools/osm_a_mapa.py map.osm data/map/miguelturra.json`
 
 ## Controles
 
@@ -124,7 +128,7 @@ CENTRAL_112/
 │   ├── calls/llamada.gd       Motor de conversaciones
 │   └── interface/hud.gd       Interfaz de televisión
 └── data/
-    ├── map/mapa_prueba.gd             Datos del mapa (editable)
+    ├── map/miguelturra.json           Mapa real de Miguelturra (OpenStreetMap)
     └── dialogues/llamada_accidente.gd Conversación de prueba (editable)
 ```
 

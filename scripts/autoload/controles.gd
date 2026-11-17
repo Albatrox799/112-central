@@ -30,6 +30,54 @@ func _ready() -> void:
 	_eje("zoom_menos", JOY_AXIS_TRIGGER_LEFT, 1.0, [KEY_X, KEY_PAGEDOWN])
 
 
+# ------------------------------------------------------------------
+# CONFIGURACIÓN DEL MANDO
+# Cada mando/sistema puede numerar los botones de forma distinta
+# (en algunos Fire TV la X del mando de PS4 no llega como "botón A").
+# Por eso el juego pregunta qué botón es X y cuál es Círculo, y lo guarda.
+
+const RUTA_CONFIG := "user://controles.cfg"
+
+
+func cargar_configuracion() -> bool:
+	var cfg := ConfigFile.new()
+	if cfg.load(RUTA_CONFIG) != OK:
+		return false
+	var sel: int = cfg.get_value("mando", "seleccionar", -1)
+	var can: int = cfg.get_value("mando", "cancelar", -1)
+	if sel < 0 or can < 0:
+		return false
+	aplicar_botones(sel, can)
+	return true
+
+
+func guardar_configuracion(sel: int, can: int) -> void:
+	aplicar_botones(sel, can)
+	var cfg := ConfigFile.new()
+	cfg.set_value("mando", "seleccionar", sel)
+	cfg.set_value("mando", "cancelar", can)
+	cfg.save(RUTA_CONFIG)
+
+
+func aplicar_botones(sel: int, can: int) -> void:
+	for accion in ["seleccionar", "ui_accept"]:
+		_cambiar_boton(accion, sel)
+	for accion in ["cancelar", "ui_cancel"]:
+		_cambiar_boton(accion, can)
+
+
+func _cambiar_boton(accion: String, boton: int) -> void:
+	if not InputMap.has_action(accion):
+		return
+	for e in InputMap.action_get_events(accion):
+		if e is InputEventJoypadButton:
+			InputMap.action_erase_event(accion, e)
+	var nuevo := InputEventJoypadButton.new()
+	nuevo.button_index = boton
+	nuevo.device = -1
+	InputMap.action_add_event(accion, nuevo)
+
+
 func _asegurar(accion: String, zona_muerta: float = 0.3) -> void:
 	if not InputMap.has_action(accion):
 		InputMap.add_action(accion, zona_muerta)

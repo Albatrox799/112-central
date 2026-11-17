@@ -10,6 +10,7 @@ const RedViaria = preload("res://scripts/routing/red_viaria.gd")
 const NOMBRES_SERVICIO := {
 	"ambulancia": "Ambulancia (soporte vital)",
 	"policia": "Policía Local",
+	"bomberos": "Bomberos (autobomba)",
 	"sospechoso": "Vehículo sospechoso",
 }
 
@@ -30,6 +31,8 @@ var deambular := false       # circula por su cuenta (vehículos sospechosos)
 var perseguir = null         # objetivo de una persecución (otro vehículo)
 var incidente = null
 var seleccionado := false
+var direccion := 0.0         # hacia dónde mira el vehículo (radianes)
+var color_cuerpo := Color.WHITE
 var _t := 0.0
 var _replanificar := 0.0
 
@@ -41,6 +44,15 @@ func configurar(p_id: String, p_servicio: String, p_color: Color, p_letra: Strin
 	letra = p_letra
 	velocidad = p_velocidad
 	red = p_red
+	match servicio:
+		"ambulancia":
+			color_cuerpo = Color("fff3c4")
+		"policia":
+			color_cuerpo = Color("e8eef6")
+		"bomberos":
+			color_cuerpo = Color("c0392b")
+		_:
+			color_cuerpo = Color("d62839")
 
 
 func nombre_servicio() -> String:
@@ -134,6 +146,8 @@ func _avanzar(delta: float) -> void:
 		siguiente_nodo = nodo_objetivo
 		var objetivo := red.pos(nodo_objetivo)
 		var d := position.distance_to(objetivo)
+		if d > 0.5:
+			direccion = lerp_angle(direccion, (objetivo - position).angle(), 0.35)
 		if d <= restante:
 			position = objetivo
 			restante -= d
@@ -151,19 +165,45 @@ func _avanzar(delta: float) -> void:
 
 func _draw() -> void:
 	var f := ThemeDB.fallback_font
-	var radio := 17.0
-	if seleccionado:
-		draw_circle(Vector2.ZERO, radio + 10.0, Color(1, 1, 1, 0.35))
+	var radio := 22.0
 	var parpadeo := int(_t * 6.0) % 2 == 0
+	var emergencia: bool = estado in ["En desplazamiento", "Persecución", "Buscando el lugar"]
+	# Halo de color del servicio (se ve bien aunque el mapa esté alejado)
+	if seleccionado:
+		draw_circle(Vector2.ZERO, radio + 10.0, Color(1, 1, 1, 0.30))
+	draw_circle(Vector2.ZERO, radio, Color(color, 0.28))
 	if servicio == "sospechoso":
 		if parpadeo:
-			draw_arc(Vector2.ZERO, radio + 7.0, 0.0, TAU, 24, Color("ff4d6d"), 3.0)
-	elif estado in ["En desplazamiento", "Persecución", "Buscando el lugar"]:
-		# Luces de emergencia
-		var luz := Color("ff3030") if parpadeo else Color("3080ff")
-		draw_arc(Vector2.ZERO, radio + 6.0, 0.0, TAU, 24, luz, 4.0)
-	draw_circle(Vector2.ZERO, radio, color)
-	draw_arc(Vector2.ZERO, radio, 0.0, TAU, 24, Color(0, 0, 0, 0.8), 2.0)
-	draw_string(f, Vector2(-radio, 8), letra, HORIZONTAL_ALIGNMENT_CENTER, radio * 2.0, 22, Color.BLACK)
+			draw_arc(Vector2.ZERO, radio, 0.0, TAU, 28, Color("ff4d6d"), 3.0)
+	elif emergencia:
+		var destello := Color("ff3030") if parpadeo else Color("3080ff")
+		draw_arc(Vector2.ZERO, radio, 0.0, TAU, 28, destello, 3.0)
+	else:
+		draw_arc(Vector2.ZERO, radio, 0.0, TAU, 28, Color(color, 0.8), 2.0)
+	# Vehículo visto desde arriba, girado hacia donde circula
+	draw_set_transform(Vector2.ZERO, direccion, Vector2.ONE)
+	var cuerpo := Rect2(-14, -7, 28, 14)
+	if servicio == "bomberos":
+		cuerpo = Rect2(-19, -8, 38, 16)
+	draw_rect(Rect2(cuerpo.position + Vector2(1, 1), cuerpo.size), Color(0, 0, 0, 0.45))  # sombra
+	draw_rect(cuerpo, color_cuerpo)
+	draw_rect(Rect2(cuerpo.end.x - 10, -5.5, 5, 11), Color("17212c"))   # parabrisas
+	if servicio != "bomberos":
+		draw_rect(Rect2(-12, -5.5, 3, 11), Color("17212c"))           # luna trasera
+	match servicio:
+		"bomberos":
+			draw_rect(Rect2(-16, -3, 22, 6), Color("bdc3c7"))         # escalera
+			draw_line(Vector2(-16, 0), Vector2(6, 0), Color("7f8c8d"), 1.0)
+		"ambulancia":
+			draw_rect(Rect2(-7, -7, 3, 14), Color("e63946"))
+			draw_rect(Rect2(-14, -1.5, 28, 3), Color("f4d35e"))
+		"policia":
+			draw_rect(Rect2(-14, -2, 28, 4), Color("1d4ed8"))
+	if emergencia:
+		draw_rect(Rect2(-3, -6, 4, 6), Color("ff3030") if parpadeo else Color("5a1010"))
+		draw_rect(Rect2(-3, 0, 4, 6), Color("2f6bff") if not parpadeo else Color("10205a"))
+	draw_rect(cuerpo, Color(0, 0, 0, 0.85), false, 1.5)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if id_unidad != "":
-		draw_string(f, Vector2(-70, -radio - 8.0), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 140, 17, Color.WHITE)
+		draw_string_outline(f, Vector2(-70, -radio - 6.0), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 140, 17, 4, Color("0f151c"))
+		draw_string(f, Vector2(-70, -radio - 6.0), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 140, 17, Color.WHITE)
