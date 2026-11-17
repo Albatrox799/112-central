@@ -1,0 +1,62 @@
+# Crea el APK para Fire TV automáticamente en GitHub.
+# Se ejecuta cada vez que subes cambios (o a mano desde la pestaña Actions).
+#
+# IMPORTANTE: cambia la versión de Godot en LAS DOS líneas marcadas con <<<
+# para que coincida con la tuya (Ayuda -> Acerca de Godot), por ejemplo 4.5.1
+
+name: Crear APK Fire TV
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.7.2                     # <<< tu versión de Godot
+  EXPORT_NAME: central112
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.7.2      # <<< la misma versión aquí
+    steps:
+      - name: Descargar el proyecto
+        uses: actions/checkout@v4
+
+      - name: Preparar Godot y las plantillas de exportación
+        run: |
+          mkdir -v -p ~/.local/share/godot/export_templates/
+          mkdir -v -p ~/.config/
+          if [ -d /root/.config/godot ] && [ "$HOME" != "/root" ]; then cp -r /root/.config/godot ~/.config/godot; fi
+          if [ "$HOME" != "/root" ]; then cp -r /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/; fi
+
+      - name: Importar los recursos del proyecto
+        run: godot --headless --import || true
+
+      - name: Exportar el APK
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: /root/debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
+        run: |
+          mkdir -v -p build
+          godot --headless --verbose --export-debug "Fire TV (Android)" build/${EXPORT_NAME}.apk
+          ls -la build
+
+      - name: Guardar el APK (pestaña Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: central112-apk
+          path: build/central112.apk
+
+      - name: Publicar el APK en Releases (para Downloader)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Central 112 · versión ${{ github.run_number }}
+          files: build/central112.apk
+          make_latest: true
