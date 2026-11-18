@@ -28,6 +28,11 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Versión 0.96.2 · Arreglo de la instalación
+
+- La clave de la carpeta `firma` se ha creado de nuevo en un formato que lee cualquier versión de Java.
+- GitHub firma el APK en un paso aparte («Firmar el APK con la clave fija y comprobarlo») y comprueba la firma. Si algo falla, la ejecución sale en rojo y no se publica un APK roto.
+
 ## Novedades de la versión 0.96.1
 
 - **Comisión por multas:** cada multa tiene su importe según la infracción (aparcamiento 90 €, ruido 300 €, alcoholemia 500 €, velocidad de 100 a 600 € según el exceso). La central se lleva una comisión del 30 % en prácticas, que sube un 5 % con cada rango hasta el 50 %. Se ve en el informe y en el resumen del turno, y también cuentan las multas del radar del coche camuflado.
