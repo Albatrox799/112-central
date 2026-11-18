@@ -7,6 +7,7 @@ extends Node
 ##   - Meteorología: lluvia, niebla, tormenta (con relámpagos) y calor
 ## Las luces van en una capa aparte para que la oscuridad de la noche no las apague.
 
+const SEPARACION_FAROLAS := 90.0
 const MATERIAL_SUMA := preload("res://scripts/effects/material_suma.tres")
 
 var datos: Dictionary = {}
@@ -14,7 +15,10 @@ var vehiculos: Array = []
 var incidentes: Array = []
 var noche := 0.0             # 0 = día, 1 = noche cerrada
 var zoom := 1.0
-var calidad_alta := true
+var calidad_alta := true:
+	set(valor):
+		calidad_alta = valor
+		_encendidas = -1   # vuelve a dibujar las farolas con la nueva calidad
 var clima := "despejado"     # despejado, lluvia, niebla, tormenta, calor
 var activo := true           # false en los menús (se queda quieto)
 
@@ -30,16 +34,30 @@ var _burbujas: Array = []     # {nodo, texto, color, vida}
 var _gotas: Array = []        # [x, y, velocidad]
 var _niebla: Array = []       # [pos, radio, velocidad]
 var _t := 0.0
+var _habia_burbujas := false
+var _habia_meteo := false
 var _flash := 0.0
 var _t_relampago := 6.0
 var sonido_lluvia: AudioStreamPlayer
 var sonido_trueno: AudioStreamPlayer
 var fuente: Font
+var brillo: GradientTexture2D   # una sola imagen de luz difuminada para todas las luces (muy rápido)
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	fuente = ThemeDB.fallback_font
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	g.add_point(0.35, Color(1, 1, 1, 0.45))
+	brillo = GradientTexture2D.new()
+	brillo.gradient = g
+	brillo.width = 64
+	brillo.height = 64
+	brillo.fill = GradientTexture2D.FILL_RADIAL
+	brillo.fill_from = Vector2(0.5, 0.5)
+	brillo.fill_to = Vector2(1.0, 0.5)
 	capa_mundo = CanvasLayer.new()
 	capa_mundo.layer = 1
 	capa_mundo.follow_viewport_enabled = true
@@ -89,12 +107,12 @@ func configurar(p_datos: Dictionary) -> void:
 			var a := Vector2(float(lista[(i - 1) * 2]), float(lista[(i - 1) * 2 + 1]))
 			var b := Vector2(float(lista[i * 2]), float(lista[i * 2 + 1]))
 			var largo := a.distance_to(b)
-			var d := 55.0 - resto
+			var d := SEPARACION_FAROLAS - resto
 			while d < largo:
 				var lado := (b - a).normalized().orthogonal() * 9.0
 				_farolas.append([a.lerp(b, d / largo) + lado, randf()])
-				d += 55.0
-			resto = largo - (d - 55.0)
+				d += SEPARACION_FAROLAS
+			resto = largo - (d - SEPARACION_FAROLAS)
 	_encendidas = -1
 
 
@@ -117,24 +135,29 @@ func _process(delta: float) -> void:
 			vivas.append(b)
 	_burbujas = vivas
 	luces.queue_redraw()
-	burbujas.queue_redraw()
+	if not _burbujas.is_empty() or _habia_burbujas:
+		burbujas.queue_redraw()
+	_habia_burbujas = not _burbujas.is_empty()
 	if activo and not pausado:
 		_actualizar_meteo(delta)
-	meteo.queue_redraw()
+	if clima != "despejado" or _flash > 0.0 or _habia_meteo:
+		meteo.queue_redraw()
+	_habia_meteo = clima != "despejado" or _flash > 0.0
 
 
 # ================================================================ LUCES
 
+func _luz(nodo: CanvasItem, p: Vector2, radio: float, color: Color) -> void:
+	nodo.draw_texture_rect(brillo, Rect2(p - Vector2(radio, radio), Vector2(radio, radio) * 2.0), false, color)
+
+
 func _dibujar_farolas() -> void:
 	var cuantas := float(_encendidas) / 20.0
-	var radio := 26.0 if calidad_alta else 18.0
+	var radio := 30.0 if calidad_alta else 20.0
+	var color := Color(1.0, 0.75, 0.4, 0.5 if calidad_alta else 0.35)
 	for f in _farolas:
 		if float(f[1]) < cuantas:
-			var p: Vector2 = f[0]
-			if calidad_alta:
-				farolas.draw_circle(p, radio, Color(1.0, 0.72, 0.35, 0.10))
-			farolas.draw_circle(p, radio * 0.45, Color(1.0, 0.78, 0.45, 0.16))
-			farolas.draw_circle(p, 2.5, Color(1.0, 0.9, 0.7, 0.8))
+			_luz(farolas, f[0], radio, color)
 
 
 func _dibujar_luces() -> void:
@@ -149,30 +172,24 @@ func _dibujar_luces() -> void:
 			var dir := Vector2.from_angle(float(v.direccion))
 			var lado := dir.orthogonal()
 			var largo := 70.0
-			var cono := PackedVector2Array([p + dir * 6.0 + lado * 4.0, p + dir * largo + lado * 26.0, p + dir * largo - lado * 26.0, p + dir * 6.0 - lado * 4.0])
-			luces.draw_colored_polygon(cono, Color(1.0, 0.95, 0.75, 0.10 * noche))
+			if calidad_alta:
+				var cono := PackedVector2Array([p + dir * 6.0 + lado * 4.0, p + dir * largo + lado * 26.0, p + dir * largo - lado * 26.0, p + dir * 6.0 - lado * 4.0])
+				luces.draw_colored_polygon(cono, Color(1.0, 0.95, 0.75, 0.10 * noche))
 		# Sirenas: destellos rojo y azul que iluminan la calle
 		var sirena: bool = v.en_emergencia or (v.estado == "En intervención")
 		if sirena and v.servicio != "sospechoso":
 			var col := Color(1.0, 0.15, 0.15) if turno else Color(0.2, 0.4, 1.0)
 			if v.servicio == "bomberos" and not turno:
 				col = Color(1.0, 0.45, 0.1)
-			var r := 75.0 if calidad_alta else 55.0
-			if calidad_alta:
-				luces.draw_circle(p, r, Color(col, 0.10 * fuerza))
-			luces.draw_circle(p, r * 0.5, Color(col, 0.18 * fuerza))
+			var r := 80.0 if calidad_alta else 55.0
+			_luz(luces, p, r, Color(col, 0.45 * fuerza))
 	for inc in incidentes:
 		if not is_instance_valid(inc) or not inc.activo():
 			continue
 		if inc.tipo == "incendio" or inc.categoria == "fuego":
 			var parpadeo := 0.8 + 0.2 * sin(_t * 9.0 + inc.position.x)
 			var r := (90.0 + 45.0 * int(inc.intensidad)) * parpadeo
-			if calidad_alta:
-				luces.draw_circle(inc.position, r, Color(1.0, 0.4, 0.05, 0.10 * fuerza))
-			luces.draw_circle(inc.position, r * 0.5, Color(1.0, 0.55, 0.1, 0.16 * fuerza))
-	if _flash > 0.0:
-		# Relámpago: ilumina todo el pueblo un instante
-		luces.draw_rect(Rect2(-2000, -2000, 12000, 12000), Color(0.7, 0.75, 1.0, _flash * 0.35))
+			_luz(luces, inc.position, r, Color(1.0, 0.45, 0.08, 0.5 * fuerza))
 
 
 # ================================================================ BURBUJAS DE RADIO
@@ -220,7 +237,7 @@ func set_clima(nuevo: String) -> void:
 	_niebla.clear()
 	var lluvia := clima == "lluvia" or clima == "tormenta"
 	if lluvia:
-		var n := (140 if clima == "tormenta" else 90) if calidad_alta else 55
+		var n := (110 if clima == "tormenta" else 70) if calidad_alta else 40
 		for i in n:
 			_gotas.append([randf() * 1280.0, randf() * 720.0, randf_range(0.8, 1.2)])
 		if sonido_lluvia.stream != null and not sonido_lluvia.playing:
@@ -228,7 +245,7 @@ func set_clima(nuevo: String) -> void:
 	else:
 		sonido_lluvia.stop()
 	if clima == "niebla":
-		for i in (9 if calidad_alta else 5):
+		for i in (6 if calidad_alta else 3):
 			_niebla.append([Vector2(randf() * 1400.0 - 60.0, randf() * 720.0), randf_range(160, 300), randf_range(8, 20)])
 	_t_relampago = randf_range(5.0, 12.0)
 
@@ -277,7 +294,7 @@ func _dibujar_meteo() -> void:
 		"niebla":
 			meteo.draw_rect(Rect2(0, 0, 1280, 720), Color(0.75, 0.8, 0.88, 0.16))
 			for n in _niebla:
-				meteo.draw_circle(n[0], float(n[1]), Color(0.8, 0.84, 0.9, 0.07))
+				_luz(meteo, n[0], float(n[1]), Color(0.8, 0.84, 0.9, 0.18))
 		"calor":
 			meteo.draw_rect(Rect2(0, 0, 1280, 720), Color(1.0, 0.55, 0.15, 0.07))
 	if _flash > 0.0:

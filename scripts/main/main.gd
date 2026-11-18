@@ -59,6 +59,7 @@ var modulador: CanvasModulate
 var efectos = null
 var clima := "despejado"
 var tween_camara: Tween
+var _t_fps_bajo := 0.0
 var hud
 var sonidos := {}
 var vehiculos: Array = []
@@ -769,6 +770,7 @@ func _process(delta: float) -> void:
 			_t_historias = 1.0
 			_vigilar_historias()
 	_ajustar_iconos()
+	_vigilar_fluidez(delta)
 	var hora := fmod(segundos_sim / 3600.0, 24.0)
 	modulador.color = _color_hora(hora) * _tinte_clima()
 	efectos.noche = _factor_noche(hora)
@@ -829,6 +831,23 @@ func _mover_camara(delta: float) -> void:
 		var nz := clampf(camara.zoom.x * (1.0 + z * 1.6 * d), 0.3, 2.2)
 		camara.zoom = Vector2(nz, nz)
 	camara.position = camara.position.clamp(Vector2.ZERO, tamano_mapa)
+
+
+## Si el juego va muy lento varios segundos, baja la calidad gráfica solo.
+func _vigilar_fluidez(delta: float) -> void:
+	if opciones["calidad"] != "alta":
+		return
+	var real := delta / maxf(Engine.time_scale, 0.01)
+	if Engine.get_frames_per_second() < 15:
+		_t_fps_bajo += real
+	else:
+		_t_fps_bajo = 0.0
+	if _t_fps_bajo > 6.0:
+		_t_fps_bajo = 0.0
+		opciones["calidad"] = "normal"
+		_aplicar_opciones()
+		_guardar_opciones()
+		hud.notificar("El juego iba lento: he puesto la calidad gráfica en Normal (puedes cambiarla en Opciones).", Color("ffd166"))
 
 
 ## 0 de día, 1 de noche cerrada (para las farolas y los faros).

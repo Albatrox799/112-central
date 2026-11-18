@@ -28,6 +28,11 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 0.8.2
+
+- Arreglo de fluidez: las farolas y los brillos de sirenas y fuego se dibujan con una sola imagen de luz (antes eran miles de círculos y el juego bajaba a 6 FPS).
+- Si aun así el juego va lento varios segundos, la calidad gráfica baja sola a Normal.
+
 ## Novedades de la versión 0.8.1
 
 - En el lugar: los vehículos llegan conduciendo, aparcan, abren la puerta y se baja el personal.
