@@ -27,10 +27,13 @@ var texto_consejo: Label
 var tween_consejo: Tween
 var _t_portada := 0.0
 var vista_lugar
+var lugar_inc = null
+var lugar_final := false
 var scroll_opciones: ScrollContainer
 var raiz: Control
 var etiqueta_reloj: Label
 var etiqueta_velocidad: Label
+var etiqueta_clima: Label
 var etiqueta_pausa: Label
 var caja_notificaciones: VBoxContainer
 var etiqueta_ayuda: Label
@@ -41,6 +44,31 @@ var panel_texto: Label
 var panel_opciones: VBoxContainer
 var ventana_llamada: PanelContainer
 var ll_cabecera: Label
+var ll_luz: Control
+var ll_duracion: Label
+var ll_pestana_dialogo: Label
+var ll_pestana_info: Label
+var ll_caja_dialogo: VBoxContainer
+var ll_caja_info: VBoxContainer
+var ll_scroll_historial: ScrollContainer
+var ll_historial: VBoxContainer
+var ll_saltar: Label
+var ll_precision: Control
+var icono_llamada: Control
+var tecleo: AudioStreamPlayer
+var pestana_llamada := 0
+var precision_llamada := 0
+var texto_animado := true
+var _texto_completo := ""
+var _letras := 0.0
+var _textos_opciones: Array = []
+var _ultima_frase_operador := ""
+var _t_duracion := 0.0
+var _t_aviso := 0.0
+var _t_aviso_total := 25.0
+var _t_icono := 0.0
+const ANCHO_LLAMADA := 540.0
+const LETRAS_POR_SEGUNDO := 48.0
 var ll_estado: Label
 var ll_barra: ProgressBar
 var ll_localizacion: Label
@@ -72,11 +100,16 @@ func _ready() -> void:
 	_crear_barra_unidades()
 	_crear_debug()
 	vista_lugar = VistaLugar.new()
-	vista_lugar.position = Vector2(14, 296)
+	vista_lugar.position = Vector2(14, 262)
 	vista_lugar.visible = false
 	raiz.add_child(vista_lugar)
 	_crear_aviso_llamada()
 	_crear_ventana_llamada()
+	tecleo = AudioStreamPlayer.new()
+	if ResourceLoader.exists("res://assets/audio/tecla.wav"):
+		tecleo.stream = load("res://assets/audio/tecla.wav")
+	tecleo.volume_db = -14.0
+	add_child(tecleo)
 	_crear_panel_lateral()
 	_crear_calibracion()
 	_crear_consejo()
@@ -135,7 +168,100 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.7.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.8.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+
+
+# ---------------------------------------------------------------- PERIÓDICO (fin de turno)
+
+var periodico: Control
+var datos_periodico: Dictionary = {}
+
+
+func mostrar_periodico(d: Dictionary) -> void:
+	datos_periodico = d
+	if periodico == null:
+		periodico = Control.new()
+		periodico.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		periodico.position = Vector2(ANCHO / 2.0 - 380.0, 58)
+		periodico.size = Vector2(760, 500)
+		periodico.draw.connect(_dibujar_periodico)
+		raiz.add_child(periodico)
+	periodico.visible = true
+	periodico.pivot_offset = periodico.size / 2.0
+	periodico.rotation = -0.6
+	periodico.scale = Vector2(0.2, 0.2)
+	var tw := periodico.create_tween().set_parallel(true)
+	tw.tween_property(periodico, "rotation", -0.02, 0.7).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(periodico, "scale", Vector2.ONE, 0.7).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	periodico.queue_redraw()
+
+
+func ocultar_periodico() -> void:
+	if periodico != null:
+		periodico.visible = false
+
+
+func _dibujar_periodico() -> void:
+	var f := ThemeDB.fallback_font
+	var w := periodico.size.x
+	var h := periodico.size.y
+	var tinta := Color("1e1e1e")
+	periodico.draw_rect(Rect2(8, 10, w, h), Color(0, 0, 0, 0.45))
+	periodico.draw_rect(Rect2(0, 0, w, h), Color("f3ecd8"))
+	# Cabecera
+	periodico.draw_string(f, Vector2(0, 52), "LA VOZ DE MIGUELTURRA", HORIZONTAL_ALIGNMENT_CENTER, w, 44, tinta)
+	periodico.draw_line(Vector2(24, 66), Vector2(w - 24, 66), tinta, 2.0)
+	periodico.draw_string(f, Vector2(24, 86), String(datos_periodico.get("fecha", "")), HORIZONTAL_ALIGNMENT_LEFT, w - 48, 15, Color("4a4a4a"))
+	periodico.draw_string(f, Vector2(24, 86), "Edición especial · 1 €", HORIZONTAL_ALIGNMENT_RIGHT, w - 48, 15, Color("4a4a4a"))
+	periodico.draw_line(Vector2(24, 94), Vector2(w - 24, 94), tinta, 1.0)
+	# Titular
+	var titular := String(datos_periodico.get("titular", ""))
+	var y := _texto_parrafo(titular, Vector2(24, 132), w - 48, 34, tinta, 40)
+	y = _texto_parrafo(String(datos_periodico.get("subtitulo", "")), Vector2(24, y + 6), w - 48, 19, Color("3a3a3a"), 24)
+	# "Foto": la central de noche con sirenas
+	var foto := Rect2(24, y + 14, 300, 170)
+	periodico.draw_rect(foto, Color("2a2f3a"))
+	for k in 6:
+		var x := foto.position.x + 10 + k * 48.0
+		var alto := 50.0 + fmod(k * 37.0, 60.0)
+		periodico.draw_rect(Rect2(x, foto.end.y - alto, 40, alto), Color("4a5160"))
+	periodico.draw_circle(foto.position + Vector2(90, 120), 34.0, Color(0.9, 0.3, 0.3, 0.45))
+	periodico.draw_circle(foto.position + Vector2(200, 120), 34.0, Color(0.35, 0.5, 0.95, 0.45))
+	periodico.draw_rect(Rect2(foto.position + Vector2(110, 120), Vector2(80, 30)), Color("d8d8d8"))
+	periodico.draw_rect(foto, tinta, false, 1.0)
+	periodico.draw_string(f, Vector2(foto.position.x, foto.end.y + 18), "Foto: Central 112 de Miguelturra.", HORIZONTAL_ALIGNMENT_LEFT, 300, 13, Color("555555"))
+	# Columna de breves
+	var x0 := 344.0
+	var yb := y + 30
+	periodico.draw_string(f, Vector2(x0, yb), "BREVES", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("8e1f1f"))
+	yb += 10
+	for b in datos_periodico.get("breves", []):
+		yb = _texto_parrafo("· " + String(b), Vector2(x0, yb + 20), w - x0 - 24, 15, tinta, 19)
+		if yb > h - 70:
+			break
+	# Pie: valoración de los vecinos
+	periodico.draw_line(Vector2(24, h - 46), Vector2(w - 24, h - 46), tinta, 1.0)
+	periodico.draw_string(f, Vector2(24, h - 20), String(datos_periodico.get("pie", "")), HORIZONTAL_ALIGNMENT_LEFT, w - 48, 16, tinta)
+
+
+## Escribe un párrafo partiendo las líneas; devuelve la altura final.
+func _texto_parrafo(texto: String, pos: Vector2, ancho: float, tam: int, color: Color, interlineado: float) -> float:
+	var f := ThemeDB.fallback_font
+	var palabras := texto.split(" ")
+	var linea := ""
+	var y := pos.y
+	for p in palabras:
+		var prueba := p if linea == "" else linea + " " + p
+		if f.get_string_size(prueba, HORIZONTAL_ALIGNMENT_LEFT, -1, tam).x > ancho and linea != "":
+			periodico.draw_string(f, Vector2(pos.x, y), linea, HORIZONTAL_ALIGNMENT_LEFT, ancho, tam, color)
+			y += interlineado
+			linea = p
+		else:
+			linea = prueba
+	if linea != "":
+		periodico.draw_string(f, Vector2(pos.x, y), linea, HORIZONTAL_ALIGNMENT_LEFT, ancho, tam, color)
+		y += interlineado
+	return y
 
 
 # ---------------------------------------------------------------- CONSEJOS (tutorial)
@@ -221,6 +347,16 @@ func ventana_abierta() -> bool:
 func _input(event: InputEvent) -> void:
 	if calibrando():
 		return
+	# Durante la llamada: L1/R1 cambian de pestaña y X salta el texto que se escribe
+	if ventana_llamada.visible and not panel_lateral.visible:
+		if event.is_action_pressed("categoria_siguiente") or event.is_action_pressed("categoria_anterior"):
+			_elegir_pestana(1 - pestana_llamada)
+			get_viewport().set_input_as_handled()
+			return
+		if escribiendo() and (event.is_action_pressed("seleccionar") or event.is_action_pressed("ui_accept")):
+			saltar_texto()
+			get_viewport().set_input_as_handled()
+			return
 	var abajo := event.is_action_pressed("nav_abajo")
 	var arriba := event.is_action_pressed("nav_arriba")
 	if not abajo and not arriba:
@@ -247,11 +383,28 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	# Tiempo real (la llamada va a cámara lenta, pero el texto y los relojes no)
+	var real := delta / maxf(Engine.time_scale, 0.01)
+	_t_icono += real
+	if aviso_llamada.visible:
+		if not get_tree().paused:
+			_t_aviso = maxf(_t_aviso - delta, 0.0)
+		icono_llamada.queue_redraw()
+	if ventana_llamada.visible:
+		if not get_tree().paused:
+			_t_duracion += real
+		ll_duracion.text = "%02d:%02d" % [int(_t_duracion) / 60, int(_t_duracion) % 60]
+		ll_luz.queue_redraw()
+		_avanzar_texto(real)
+		caja_notificaciones.position = Vector2(ANCHO - 460.0, 66)
+	else:
+		caja_notificaciones.position = Vector2(14, 66)
 	if portada.visible:
 		_t_portada += delta
 		portada.queue_redraw()
 	mira.visible = not ventana_abierta() and not portada.visible
 	mira.queue_redraw()
+	_actualizar_vista_lugar()
 	if calibrando():
 		etiqueta_ayuda.text = "Configuración del mando"
 	elif get_tree().paused and not pausa_tactica:
@@ -261,7 +414,12 @@ func _process(delta: float) -> void:
 	elif panel_abierto():
 		etiqueta_ayuda.text = "Cruceta: elegir   ·   X: confirmar   ·   Círculo: volver"
 	elif llamada_abierta():
-		etiqueta_ayuda.text = "Cruceta: elegir qué decir   ·   X: decirlo"
+		if escribiendo():
+			etiqueta_ayuda.text = "X: ver todo el texto   ·   L1/R1: Diálogo / Información"
+		elif pestana_llamada == 1:
+			etiqueta_ayuda.text = "L1/R1: volver al diálogo"
+		else:
+			etiqueta_ayuda.text = "Cruceta: elegir qué decir   ·   X: decirlo   ·   L1/R1: Diálogo / Información"
 	elif modo_envio != "":
 		etiqueta_ayuda.text = "ENVIANDO %s · Mueve la mira a una emergencia · X: enviar · Círculo: cancelar" % modo_envio
 	elif aviso_llamada.visible:
@@ -290,14 +448,33 @@ static func formato_euros(cantidad: int) -> String:
 	return signo + t + out + " €"
 
 
-func mostrar_lugar(inc) -> void:
-	vista_lugar.inc = inc
-	vista_lugar.visible = true
+## La vista "En el lugar" va ligada a la emergencia que se está mirando:
+## aparece cuando hay alguna unidad trabajando allí (también de apoyo),
+## cambia al mirar otra y se cierra al salir del panel.
+## final = true: se muestra junto al informe aunque las unidades ya se vayan.
+func mirar_lugar(inc, final: bool = false) -> void:
+	lugar_inc = inc
+	lugar_final = final
 
 
-func ocultar_lugar(inc) -> void:
-	if vista_lugar.inc == inc:
-		vista_lugar.visible = false
+func dejar_de_mirar() -> void:
+	lugar_inc = null
+	lugar_final = false
+
+
+func _actualizar_vista_lugar() -> void:
+	var mostrar := false
+	if lugar_inc != null and is_instance_valid(lugar_inc) and panel_lateral.visible:
+		mostrar = lugar_final or lugar_inc.hay_unidades_en_escena()
+	if mostrar:
+		vista_lugar.inc = lugar_inc
+		vista_lugar.final = lugar_final
+	vista_lugar.visible = mostrar
+
+
+func set_clima(texto: String, color: Color) -> void:
+	etiqueta_clima.text = texto
+	etiqueta_clima.add_theme_color_override("font_color", color)
 
 
 func set_velocidad(texto: String) -> void:
@@ -334,6 +511,7 @@ func notificar(texto: String, color: Color = Color("e8eef6")) -> void:
 
 ## opciones: Array de Dictionary {"texto": String, "accion": Callable, "activo": bool (opcional)}
 func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: bool = false, pos_y: float = 90.0, ancho: float = 620.0) -> void:
+	dejar_de_mirar()
 	if centrado:
 		panel_lateral.custom_minimum_size = Vector2(ancho, 0)
 		panel_lateral.position = Vector2(ANCHO / 2.0 - ancho / 2.0, pos_y)
@@ -366,19 +544,22 @@ func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: boo
 
 
 func cerrar_panel() -> void:
+	dejar_de_mirar()
 	panel_lateral.visible = false
 	_vaciar(panel_opciones)
 	_reenfocar()
 
 
-func mostrar_aviso_llamada(texto: String) -> void:
+func mostrar_aviso_llamada(texto: String, segundos: float = 25.0) -> void:
 	aviso_texto.text = texto
+	_t_aviso = segundos
+	_t_aviso_total = segundos
 	aviso_llamada.visible = true
 	call_deferred("_ajustar", aviso_llamada)
 	if tween_aviso:
 		tween_aviso.kill()
 	tween_aviso = aviso_llamada.create_tween().set_loops()
-	tween_aviso.tween_property(aviso_llamada, "modulate", Color(1, 0.75, 0.75), 0.4)
+	tween_aviso.tween_property(aviso_llamada, "modulate", Color(0.8, 1.0, 0.85), 0.4)
 	tween_aviso.tween_property(aviso_llamada, "modulate", Color.WHITE, 0.4)
 	if not ventana_abierta():
 		boton_contestar.call_deferred("grab_focus")
@@ -394,6 +575,11 @@ func ocultar_aviso_llamada() -> void:
 
 func abrir_llamada() -> void:
 	ventana_llamada.visible = true
+	_vaciar(ll_historial)
+	_t_duracion = 0.0
+	_texto_completo = ""
+	_letras = 0.0
+	_elegir_pestana(0)
 
 
 func cerrar_llamada() -> void:
@@ -402,36 +588,113 @@ func cerrar_llamada() -> void:
 	_reenfocar()
 
 
-func actualizar_llamada(cabecera: String, texto: String, calma: int, estado: String, localizacion: String, info: Array, opciones: Array) -> void:
+func escribiendo() -> bool:
+	return ventana_llamada.visible and _letras < _texto_completo.length()
+
+
+func actualizar_llamada(cabecera: String, texto: String, calma: int, estado: String, localizacion: String, info: Array, opciones: Array, precision: int = 0) -> void:
 	ll_cabecera.text = cabecera
-	ll_texto.text = "«" + texto + "»"
+	# Lo que dijo el operador queda en el historial, y la respuesta anterior también
+	if _texto_completo != "":
+		_anadir_historial("Llamante", _texto_completo, Color("7dffb3"))
+	if _ultima_frase_operador != "":
+		_anadir_historial("Tú", _ultima_frase_operador, Color.WHITE)
+		_ultima_frase_operador = ""
+	_texto_completo = "«" + texto + "»"
+	_letras = 0.0 if texto_animado else float(_texto_completo.length())
+	ll_texto.text = ""
 	ll_estado.text = "Estado: " + estado
 	ll_barra.value = calma
 	var c := Color("e74c3c").lerp(Color("2ecc71"), calma / 100.0)
 	ll_barra.add_theme_stylebox_override("fill", _caja(c, 0, 0))
 	ll_localizacion.text = "Localización: " + localizacion
-	var datos := "ninguno todavía"
+	precision_llamada = precision
+	ll_precision.queue_redraw()
+	var datos := "· ninguno todavía"
 	if info.size() > 0:
 		datos = ""
 		for i in info.size():
-			datos += ("" if i == 0 else " · ") + str(info[i])
-	ll_info.text = "Datos obtenidos: " + datos
+			datos += ("" if i == 0 else "\n") + "· " + str(info[i])
+	ll_info.text = "Datos obtenidos:\n" + datos
 	_vaciar(ll_opciones)
-	var primero: Button = null
+	_textos_opciones = opciones.duplicate()
 	for i in opciones.size():
 		var b := _boton("%d. %s" % [i + 1, opciones[i]])
+		var op := String(opciones[i])
+		if op.begins_with("[Terminar") or op.begins_with("[Colgar"):
+			b.text = "FINALIZAR LLAMADA" if op == "[Colgar]" else "FINALIZAR LLAMADA Y CREAR EL INCIDENTE"
+			b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+			b.add_theme_stylebox_override("normal", _caja(Color("8e1f1f"), 2, 12, Color("ff6b6b"), 8))
+			b.add_theme_stylebox_override("hover", _caja(Color("8e1f1f"), 2, 12, Color("ff6b6b"), 8))
 		b.pressed.connect(_al_elegir.bind(i))
 		ll_opciones.add_child(b)
-		if primero == null:
-			primero = b
+	ll_opciones.visible = not escribiendo()
+	ll_saltar.visible = escribiendo()
+	if pestana_llamada != 0:
+		_elegir_pestana(0)
 	call_deferred("_ajustar", ventana_llamada)
-	if primero != null and not panel_abierto():
-		primero.call_deferred("grab_focus")
+	if not escribiendo():
+		_texto_terminado()
+
+
+func _anadir_historial(quien: String, texto: String, color: Color) -> void:
+	var e := _etiqueta("%s: %s" % [quien, texto], 17, color)
+	e.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	e.custom_minimum_size = Vector2(ANCHO_LLAMADA - 60, 0)
+	ll_historial.add_child(e)
+	while ll_historial.get_child_count() > 14:
+		var vieja := ll_historial.get_child(0)
+		ll_historial.remove_child(vieja)
+		vieja.queue_free()
+	call_deferred("_bajar_historial")
+
+
+func _bajar_historial() -> void:
+	ll_scroll_historial.scroll_vertical = 100000
+
+
+## Texto que se va escribiendo letra a letra, con sonido de tecleo.
+func _avanzar_texto(delta: float) -> void:
+	if not escribiendo():
+		return
+	var antes := int(_letras)
+	_letras = minf(_letras + delta * LETRAS_POR_SEGUNDO, float(_texto_completo.length()))
+	var ahora := int(_letras)
+	ll_texto.text = _texto_completo.left(ahora)
+	if ahora / 3 != antes / 3 and tecleo.stream != null:
+		tecleo.pitch_scale = randf_range(0.9, 1.15)
+		tecleo.play()
+	if not escribiendo():
+		_texto_terminado()
+
+
+func saltar_texto() -> void:
+	_letras = float(_texto_completo.length())
+	ll_texto.text = _texto_completo
+	_texto_terminado()
+
+
+func _texto_terminado() -> void:
+	ll_texto.text = _texto_completo
+	ll_opciones.visible = true
+	ll_saltar.visible = false
+	call_deferred("_ajustar", ventana_llamada)
+	if pestana_llamada == 0:
+		_enfocar_primera_opcion()
+
+
+func _enfocar_primera_opcion() -> void:
+	if panel_lateral == null or panel_abierto() or ll_opciones.get_child_count() == 0:
+		return
+	var b: Button = ll_opciones.get_child(0)
+	b.call_deferred("grab_focus")
 
 
 # ---------------------------------------------------------------- INTERNO
 
 func _al_elegir(i: int) -> void:
+	if i >= 0 and i < _textos_opciones.size():
+		_ultima_frase_operador = String(_textos_opciones[i])
 	call_deferred("emit_signal", "opcion_llamada", i)
 
 
@@ -554,6 +817,8 @@ func _crear_barra_superior() -> void:
 	fila.add_child(etiqueta_pausa)
 	etiqueta_dinero = _etiqueta("", 24, Color("6ee7b7"))
 	fila.add_child(etiqueta_dinero)
+	etiqueta_clima = _etiqueta("", 22, Color("9fd3ff"))
+	fila.add_child(etiqueta_clima)
 	etiqueta_velocidad = _etiqueta("Tiempo x1", 22, Color("9fb3c8"))
 	fila.add_child(etiqueta_velocidad)
 	etiqueta_reloj = _etiqueta("08:00", 28, Color.WHITE)
@@ -606,6 +871,7 @@ const COLORES_ESTADO := {
 	"Buscando el lugar": Color("d35400"), "En intervención": Color("c0392b"),
 	"Persecución": Color("8e44ad"), "Regresando": Color("2471a3"),
 	"Patrullando": Color("1e8449"), "Traslado al hospital": Color("7d3c98"),
+	"Reponiendo material": Color("b7950b"), "Sin personal": Color("555555"),
 }
 
 
@@ -642,66 +908,186 @@ func _crear_debug() -> void:
 
 func _crear_aviso_llamada() -> void:
 	aviso_llamada = PanelContainer.new()
-	aviso_llamada.position = Vector2(ANCHO / 2.0 - 270.0, 70)
-	aviso_llamada.custom_minimum_size = Vector2(540, 0)
-	aviso_llamada.add_theme_stylebox_override("panel", _caja(Color("5c1a1a"), 3, 16, Color("ff6b6b"), 12))
+	aviso_llamada.position = Vector2(ANCHO / 2.0 - 280.0, 66)
+	aviso_llamada.custom_minimum_size = Vector2(560, 0)
+	aviso_llamada.add_theme_stylebox_override("panel", _caja(Color(0.02, 0.12, 0.08, 0.96), 3, 14, Color("3ddc84"), 14))
+	var fila := HBoxContainer.new()
+	fila.add_theme_constant_override("separation", 16)
+	aviso_llamada.add_child(fila)
+	icono_llamada = Control.new()
+	icono_llamada.custom_minimum_size = Vector2(110, 110)
+	icono_llamada.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icono_llamada.draw.connect(_dibujar_icono_llamada)
+	fila.add_child(icono_llamada)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
-	aviso_llamada.add_child(v)
-	var titulo := _etiqueta("LLAMADA ENTRANTE AL 112", 30, Color.WHITE)
-	titulo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 6)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fila.add_child(v)
+	var titulo := _etiqueta("LLAMADA ENTRANTE · 112", 28, Color("7dffb3"))
+	titulo.add_theme_constant_override("outline_size", 6)
+	titulo.add_theme_color_override("font_outline_color", Color(0.1, 0.6, 0.3, 0.6))
 	v.add_child(titulo)
-	aviso_texto = _etiqueta("", 21, Color("ffd6d6"))
-	aviso_texto.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	aviso_texto = _etiqueta("", 19, Color("d8ffe8"))
+	aviso_texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(aviso_texto)
-	boton_contestar = _boton("Contestar la llamada (X)")
+	boton_contestar = _boton("   Contestar (X)")
 	boton_contestar.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boton_contestar.add_theme_stylebox_override("normal", _caja(Color("1e8f4e"), 2, 12, Color("3ddc84"), 10))
+	boton_contestar.add_theme_stylebox_override("hover", _caja(Color("1e8f4e"), 2, 12, Color("3ddc84"), 10))
+	boton_contestar.add_theme_stylebox_override("pressed", _caja(Color("27b765"), 2, 12, Color("b9ffd6"), 10))
+	boton_contestar.add_theme_font_size_override("font_size", 24)
 	boton_contestar.pressed.connect(_al_contestar)
 	v.add_child(boton_contestar)
 	aviso_llamada.visible = false
 	raiz.add_child(aviso_llamada)
 
 
+## Teléfono con ondas y la cuenta atrás antes de que cuelguen.
+func _dibujar_icono_llamada() -> void:
+	var c := Vector2(55, 55)
+	var fr := clampf(_t_aviso / maxf(_t_aviso_total, 0.1), 0.0, 1.0)
+	icono_llamada.draw_circle(c, 50.0, Color(0.05, 0.25, 0.15, 1.0))
+	icono_llamada.draw_arc(c, 50.0, 0.0, TAU, 48, Color(1, 1, 1, 0.12), 6.0)
+	var col := Color("e74c3c").lerp(Color("3ddc84"), fr)
+	icono_llamada.draw_arc(c, 50.0, -PI / 2.0, -PI / 2.0 + TAU * fr, 48, col, 6.0)
+	# Ondas
+	for k in 3:
+		var fase := fmod(_t_icono * 1.2 + k * 0.33, 1.0)
+		icono_llamada.draw_arc(c, 22.0 + fase * 22.0, -0.7, 0.7, 12, Color(0.6, 1.0, 0.8, 0.7 * (1.0 - fase)), 3.0)
+		icono_llamada.draw_arc(c, 22.0 + fase * 22.0, PI - 0.7, PI + 0.7, 12, Color(0.6, 1.0, 0.8, 0.7 * (1.0 - fase)), 3.0)
+	# Auricular (vibra un poco)
+	var temblor := Vector2(sin(_t_icono * 40.0) * 1.5, 0) if fmod(_t_icono, 1.0) < 0.5 else Vector2.ZERO
+	var cc := c + temblor
+	icono_llamada.draw_arc(cc + Vector2(0, 8), 18.0, PI * 1.15, PI * 1.85, 16, Color.WHITE, 8.0)
+	icono_llamada.draw_circle(cc + Vector2(-15, 0), 6.5, Color.WHITE)
+	icono_llamada.draw_circle(cc + Vector2(15, 0), 6.5, Color.WHITE)
+	icono_llamada.draw_string(ThemeDB.fallback_font, c + Vector2(-30, 34), "%d s" % ceili(_t_aviso), HORIZONTAL_ALIGNMENT_CENTER, 60, 16, col)
+
+
 func _crear_ventana_llamada() -> void:
 	ventana_llamada = PanelContainer.new()
-	ventana_llamada.position = Vector2(90, 66)
-	ventana_llamada.custom_minimum_size = Vector2(1100, 0)
-	ventana_llamada.add_theme_stylebox_override("panel", _caja(Color(0.03, 0.08, 0.19, 0.97), 3, 22, Color("3fb6d8"), 12))
+	ventana_llamada.position = Vector2(14, 62)
+	ventana_llamada.custom_minimum_size = Vector2(ANCHO_LLAMADA, 0)
+	ventana_llamada.add_theme_stylebox_override("panel", _caja(Color(0.02, 0.07, 0.16, 0.97), 3, 14, Color("3ddc84"), 12))
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 10)
+	v.add_theme_constant_override("separation", 8)
 	ventana_llamada.add_child(v)
-	ll_cabecera = _etiqueta("", 21, Color("7fc8ff"))
+	# Cabecera verde
+	var cab := HBoxContainer.new()
+	cab.add_theme_constant_override("separation", 10)
+	v.add_child(cab)
+	ll_luz = Control.new()
+	ll_luz.custom_minimum_size = Vector2(22, 22)
+	ll_luz.draw.connect(func(): ll_luz.draw_circle(Vector2(11, 11), 8.0 if int(_t_icono * 2.0) % 2 == 0 else 6.0, Color("3ddc84")))
+	cab.add_child(ll_luz)
+	var titulo := _etiqueta("LLAMADA EN CURSO", 22, Color("7dffb3"))
+	cab.add_child(titulo)
+	var hueco := Control.new()
+	hueco.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cab.add_child(hueco)
+	ll_duracion = _etiqueta("00:00", 22, Color("d8ffe8"))
+	cab.add_child(ll_duracion)
+	ll_cabecera = _etiqueta("", 16, Color("9fc7e8"))
+	ll_cabecera.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(ll_cabecera)
+	# Pestañas
+	var pest := HBoxContainer.new()
+	pest.add_theme_constant_override("separation", 6)
+	v.add_child(pest)
+	ll_pestana_dialogo = _etiqueta("  DIÁLOGO  ", 19, Color.WHITE)
+	ll_pestana_info = _etiqueta("  INFORMACIÓN  ", 19, Color.WHITE)
+	pest.add_child(ll_pestana_dialogo)
+	pest.add_child(ll_pestana_info)
+	var hueco2 := Control.new()
+	hueco2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pest.add_child(hueco2)
+	pest.add_child(_etiqueta("L1 / R1", 15, Color("6b8aa8")))
+	# --- Pestaña DIÁLOGO
+	ll_caja_dialogo = VBoxContainer.new()
+	ll_caja_dialogo.add_theme_constant_override("separation", 8)
+	v.add_child(ll_caja_dialogo)
+	ll_scroll_historial = ScrollContainer.new()
+	ll_scroll_historial.custom_minimum_size = Vector2(0, 236)
+	ll_scroll_historial.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	ll_caja_dialogo.add_child(ll_scroll_historial)
+	ll_historial = VBoxContainer.new()
+	ll_historial.add_theme_constant_override("separation", 6)
+	ll_historial.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ll_scroll_historial.add_child(ll_historial)
+	ll_texto = _etiqueta("", 22, Color("7dffb3"))
+	ll_texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ll_texto.custom_minimum_size = Vector2(ANCHO_LLAMADA - 40, 0)
+	ll_caja_dialogo.add_child(ll_texto)
+	ll_saltar = _etiqueta("X: ver todo el texto", 15, Color("6b8aa8"))
+	ll_caja_dialogo.add_child(ll_saltar)
+	ll_opciones = VBoxContainer.new()
+	ll_opciones.add_theme_constant_override("separation", 6)
+	ll_caja_dialogo.add_child(ll_opciones)
+	# --- Pestaña INFORMACIÓN
+	ll_caja_info = VBoxContainer.new()
+	ll_caja_info.add_theme_constant_override("separation", 10)
+	ll_caja_info.visible = false
+	v.add_child(ll_caja_info)
 	var fila := HBoxContainer.new()
-	fila.add_theme_constant_override("separation", 16)
-	v.add_child(fila)
-	ll_estado = _etiqueta("", 21, Color.WHITE)
+	fila.add_theme_constant_override("separation", 12)
+	ll_caja_info.add_child(fila)
+	ll_estado = _etiqueta("", 20, Color.WHITE)
 	fila.add_child(ll_estado)
 	ll_barra = ProgressBar.new()
 	ll_barra.min_value = 0
 	ll_barra.max_value = 100
 	ll_barra.show_percentage = false
-	ll_barra.custom_minimum_size = Vector2(200, 20)
+	ll_barra.custom_minimum_size = Vector2(180, 18)
 	ll_barra.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	fila.add_child(ll_barra)
-	var hueco := Control.new()
-	hueco.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	fila.add_child(hueco)
-	ll_localizacion = _etiqueta("", 21, Color("ffd166"))
-	fila.add_child(ll_localizacion)
-	ll_info = _etiqueta("", 18, Color("9fb3c8"))
+	ll_localizacion = _etiqueta("", 20, Color("ffd166"))
+	ll_localizacion.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ll_caja_info.add_child(ll_localizacion)
+	ll_precision = Control.new()
+	ll_precision.custom_minimum_size = Vector2(ANCHO_LLAMADA - 40, 26)
+	ll_precision.draw.connect(_dibujar_precision)
+	ll_caja_info.add_child(ll_precision)
+	ll_info = _etiqueta("", 18, Color("cfe3f5"))
 	ll_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(ll_info)
-	v.add_child(HSeparator.new())
-	ll_texto = _etiqueta("", 27, Color.WHITE)
-	ll_texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	ll_texto.custom_minimum_size = Vector2(0, 80)
-	v.add_child(ll_texto)
-	ll_opciones = VBoxContainer.new()
-	ll_opciones.add_theme_constant_override("separation", 8)
-	v.add_child(ll_opciones)
+	ll_info.custom_minimum_size = Vector2(ANCHO_LLAMADA - 40, 0)
+	ll_caja_info.add_child(ll_info)
+	ll_caja_info.add_child(_etiqueta("R1: volver al diálogo para seguir hablando", 15, Color("6b8aa8")))
 	ventana_llamada.visible = false
 	raiz.add_child(ventana_llamada)
+	_elegir_pestana(0)
+
+
+func _elegir_pestana(i: int) -> void:
+	pestana_llamada = i
+	ll_caja_dialogo.visible = i == 0
+	ll_caja_info.visible = i == 1
+	var activa := _caja(Color("1e8f4e"), 0, 4, Color.TRANSPARENT, 6)
+	var inactiva := _caja(Color("13283a"), 0, 4, Color.TRANSPARENT, 6)
+	ll_pestana_dialogo.add_theme_stylebox_override("normal", activa if i == 0 else inactiva)
+	ll_pestana_info.add_theme_stylebox_override("normal", activa if i == 1 else inactiva)
+	if not ventana_llamada.visible:
+		return
+	if i == 0 and not escribiendo():
+		_enfocar_primera_opcion()
+	elif i == 1:
+		var foco := raiz.get_viewport().gui_get_focus_owner()
+		if foco != null:
+			foco.release_focus()
+	call_deferred("_ajustar", ventana_llamada)
+
+
+## Barra de precisión de la localización: 4 tramos, del desconocido al punto exacto.
+func _dibujar_precision() -> void:
+	var w := (ll_precision.size.x - 30.0) / 4.0
+	var nombres := ["Desconocida", "Zona", "Calle", "Exacta"]
+	for k in 4:
+		var r := Rect2(k * (w + 10.0), 0, w, 10)
+		var lleno := k <= precision_llamada
+		var col := Color("ffd166") if lleno else Color("1f3047")
+		if lleno and k == 3:
+			col = Color("3ddc84")
+		ll_precision.draw_rect(r, col)
+		ll_precision.draw_string(ThemeDB.fallback_font, Vector2(r.position.x, 25), nombres[k], HORIZONTAL_ALIGNMENT_LEFT, w, 13, Color("8fa9c4"))
 
 
 func _crear_panel_lateral() -> void:

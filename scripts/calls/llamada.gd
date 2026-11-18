@@ -116,7 +116,7 @@ func _aplicar(e: Dictionary) -> void:
 		for sv in e["requiere"]:
 			req[sv] = maxi(int(req.get(sv, 0)), int(e["requiere"][sv]))
 		efectos_incidente["requiere"] = req
-	for clave in ["urgencia", "traslado", "categoria"]:
+	for clave in ["urgencia", "traslado", "categoria", "heridos"]:
 		if e.has(clave):
 			efectos_incidente[clave] = e[clave]
 

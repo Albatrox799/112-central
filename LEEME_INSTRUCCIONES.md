@@ -28,6 +28,27 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 0.8.1
+
+- En el lugar: los vehículos llegan conduciendo, aparcan, abren la puerta y se baja el personal.
+- Controles de tráfico: el agente va a la ventanilla, pide la documentación, hace la prueba de alcohol de noche y escribe la multa en una libreta (se ven las líneas y el lápiz). Luego la entrega y el coche se va.
+- Accidentes con varios heridos: se ven todos (el grave tumbado y los demás sentados) y los sanitarios van atendiendo a uno tras otro.
+
+## Novedades de la versión 0.8
+
+- **En el lugar, con figuritas:** abre una emergencia (Triángulo o con la mira) en la que ya haya alguna unidad, aunque sea de apoyo, y a la izquierda verás lo que pasa: policías deteniendo y llevando al coche, sanitarios con la camilla, RCP, bomberos con la manguera, rescates por la ventana con la escalera, excarcelaciones... Cambia al mirar otra emergencia y se cierra al salir. Si todavía no ha llegado nadie, no sale nada. Al terminar, el final se ve junto al informe.
+- **Llamadas a la izquierda:** el panel de la llamada ya no tapa el centro. Tiene pestañas Diálogo e Información (L1/R1), historial de la conversación, barra de localización y el botón rojo FINALIZAR LLAMADA. El texto se va escribiendo con sonido de tecleo (X lo muestra entero).
+- **Llamada entrante nueva:** teléfono que vibra, ondas y cuenta atrás de los 25 segundos. El mando vibra.
+- **Luces:** farolas que se encienden una a una al anochecer, destellos rojos y azules de las sirenas sobre las calles, faros de los coches de noche y resplandor naranja de los incendios.
+- **Rutas animadas** con el tiempo que le falta a cada unidad, y la cámara viaja sola a los incendios.
+- **Burbujas de radio** sobre las unidades y edificios con relieve.
+- **Meteorología:** despejado, lluvia, niebla, tormenta (con relámpagos y truenos) y ola de calor. Cambia la velocidad de las unidades y trae sus propias emergencias (accidentes por la lluvia, incendios por rayos, golpes de calor). Puede cambiar a mitad del turno.
+- **Fallecimientos y trámites:** si alguien fallece, la ambulancia no lo traslada. La policía custodia el lugar y toma declaración, llegan el juzgado de guardia y el forense, y la funeraria hace el levantamiento.
+- **Historias nuevas:** accidente con varios heridos (atrapados, motorista con casco, coche que echa humo) y «mi vecina no da señales».
+- **Ambulancias sin material:** tras su último servicio seguido vuelven más rápido a la base a reponer y no aceptan avisos hasta llegar.
+- **Periódico local** al final del turno, con el caso más destacado.
+- **Opciones nuevas:** calidad gráfica (alta o normal, más fluida), texto animado, meteorología y vibración.
+
 ## Novedades de la versión 0.7
 
 - **Portada** animada con menú: Continuar partida, Nueva partida, Cómo se juega, Opciones (volumen, tamaño de texto, dificultad, mando), Créditos y Salir.

@@ -17,6 +17,7 @@ const Llamada = preload("res://scripts/calls/llamada.gd")
 const DatosLlamadas = preload("res://data/dialogues/llamadas.gd")
 const Catalogo = preload("res://data/gestion/catalogo.gd")
 const DatosHistorias = preload("res://data/historias/historias.gd")
+const Efectos = preload("res://scripts/effects/efectos.gd")
 const RUTA_OPCIONES := "user://opciones.cfg"
 const RUTA_MAPA := "res://data/map/miguelturra.json"
 const RUTA_PARTIDA := "user://partida.cfg"
@@ -30,12 +31,21 @@ const TURNOS := {
 ## Segundos que pierde una unidad buscando el lugar según la precisión.
 const TIEMPO_BUSQUEDA := [16.0, 14.0, 7.0, 0.0]
 const SEGUNDOS_PARA_COLGAR := 25.0
+const DURACION_TRAMITES := 34.0
 const COLOR_RADIO_AMBULANCIA := Color("f4d35e")
 const COLOR_RADIO_POLICIA := Color("6fb1ff")
 const COLOR_RADIO_BOMBEROS := Color("ff8a65")
 const COLOR_SISTEMA := Color("ffa630")
 const COLOR_LLAMADA := Color("ff6b6b")
 const NOMBRES_SERVICIO := {"ambulancia": "Ambulancia", "policia": "Policía", "bomberos": "Bomberos"}
+## Meteorología: nombre, color en la barra y velocidad de las unidades.
+const CLIMAS := {
+	"despejado": {"nombre": "Despejado", "color": Color("9fd3ff"), "velocidad": 1.0},
+	"lluvia": {"nombre": "Lluvia", "color": Color("7fb2ff"), "velocidad": 0.85},
+	"niebla": {"nombre": "Niebla", "color": Color("c8d0dc"), "velocidad": 0.8},
+	"tormenta": {"nombre": "Tormenta", "color": Color("b48cff"), "velocidad": 0.75},
+	"calor": {"nombre": "Ola de calor", "color": Color("ffb347"), "velocidad": 1.0},
+}
 
 var red := RedViaria.new()
 var datos_mapa: Dictionary = {}
@@ -46,6 +56,9 @@ var mapa
 var camara: Camera2D
 var capa_rutas: Node2D
 var modulador: CanvasModulate
+var efectos = null
+var clima := "despejado"
+var tween_camara: Tween
 var hud
 var sonidos := {}
 var vehiculos: Array = []
@@ -94,7 +107,7 @@ var en_portada := false
 var decoracion: Node2D
 var rutas_decor: Array = []
 var _t_portada := 0.0
-var opciones := {"volumen": 1.0, "texto_grande": false, "dificultad": "normal"}
+var opciones := {"volumen": 1.0, "texto_grande": false, "dificultad": "normal", "texto_animado": true, "calidad": "alta", "vibracion": true, "meteo": true}
 var tutorial_activo := false
 var consejos_vistos: Array = []
 var objetivos: Array = []
@@ -165,6 +178,11 @@ func _ready() -> void:
 	mapa.anadir_base("Parque de bomberos", red.pos(n_bom) + Vector2(40, -40), Color("e74c3c"), "B")
 
 	_crear_sonidos()
+	efectos = Efectos.new()
+	add_child(efectos)
+	efectos.configurar(datos_mapa)
+	efectos.vehiculos = vehiculos
+	efectos.incidentes = incidentes
 	hud = Hud.new()
 	add_child(hud)
 	hud.llamada_contestada.connect(_contestar_llamada)
@@ -314,12 +332,14 @@ func _guardar_partida() -> void:
 
 
 func _mostrar_menu_turno() -> void:
+	hud.ocultar_periodico()
 	en_portada = false
 	hud.mostrar_portada(false)
 	decoracion.visible = false
 	en_menu = true
 	get_tree().paused = true
 	hud.set_pausa(false)
+	_clima_de_menu()
 	var media := 0.0
 	if partida["valoradas"] > 0:
 		media = float(partida["estrellas"]) / partida["valoradas"]
@@ -362,12 +382,12 @@ func _empezar_turno(tipo: String) -> void:
 	hud.ocultar_aviso_llamada()
 	if hud.llamada_abierta():
 		hud.cerrar_llamada()
-	hud.ocultar_lugar(hud.vista_lugar.inc)
+	hud.dejar_de_mirar()
 	_construir_flota()
 	_cancelar_envio()
 	stats = {"llamadas": 0, "falsas": 0, "perdidas": 0, "resueltas": 0, "estrellas": 0,
 		"valoradas": 0, "tiempo_total": 0.0, "con_tiempo": 0, "empeoradas": 0, "ingresos": 0, "heridos": 0,
-		"historias": 0, "historias_buenas": 0, "relacionadas": 0}
+		"historias": 0, "historias_buenas": 0, "relacionadas": 0, "fallecidos": 0, "sucesos": []}
 	cola_relacionadas.clear()
 	_elegir_objetivos()
 	var t: Dictionary = TURNOS[tipo]
@@ -380,6 +400,8 @@ func _empezar_turno(tipo: String) -> void:
 	_aplicar_escala()
 	hud.set_pausa(false)
 	hud.notificar("Día %d · %s. Central 112 operativa." % [partida["dia"], t["nombre"]])
+	efectos.activo = true
+	_elegir_clima()
 	_programar(5.0, _sonar_llamada)
 	_programar(35.0, _evento_aleatorio)
 
@@ -560,10 +582,63 @@ func _mostrar_resumen() -> void:
 	_guardar_partida()
 	texto += "\n\nPartida guardada."
 	_sonido("envio")
-	hud.mostrar_panel("RESUMEN DEL TURNO", texto, [
+	_texto_resumen = texto
+	hud.mostrar_periodico(_datos_periodico(media))
+	hud.mostrar_panel("", "", [{"texto": "Ver el resumen del turno", "accion": _ver_resumen}], true, 574.0, 420.0)
+
+
+var _texto_resumen := ""
+
+
+func _ver_resumen() -> void:
+	hud.ocultar_periodico()
+	hud.mostrar_panel("RESUMEN DEL TURNO", _texto_resumen, [
 		{"texto": "Elegir el siguiente turno", "accion": _mostrar_menu_turno},
 		{"texto": "Salir del juego", "accion": _salir},
 	], true)
+
+
+## Portada del periódico local con el caso más destacado del turno.
+func _datos_periodico(media: float) -> Dictionary:
+	var sucesos: Array = stats["sucesos"]
+	var mejor = null
+	var peor = null
+	var muerte = null
+	for su in sucesos:
+		if su["fallecido"] and muerte == null:
+			muerte = su
+		if mejor == null or int(su["estrellas"]) > int(mejor["estrellas"]) or (int(su["estrellas"]) == int(mejor["estrellas"]) and su["historia"]):
+			mejor = su
+		if peor == null or int(su["estrellas"]) < int(peor["estrellas"]):
+			peor = su
+	var titular := "Turno tranquilo en la central del 112 de Miguelturra"
+	var sub := "Los operadores apenas han tenido avisos durante la jornada."
+	if muerte != null:
+		titular = "Jornada trágica: fallece una persona en %s" % (muerte["calle"] if muerte["calle"] != "" else "Miguelturra")
+		sub = String(muerte["resultado"])
+	elif stats["perdidas"] >= 3:
+		titular = "Críticas al 112: varias llamadas se quedan sin respuesta"
+		sub = "%d vecinos colgaron antes de ser atendidos durante el turno." % stats["perdidas"]
+	elif mejor != null and int(mejor["estrellas"]) >= 4:
+		titular = "Actuación ejemplar del 112: %s" % String(mejor["titulo"]).to_lower()
+		sub = String(mejor["resultado"])
+	elif peor != null and int(peor["estrellas"]) <= 2:
+		titular = "Polémica por la tardanza del 112: %s" % String(peor["titulo"]).to_lower()
+		sub = String(peor["resultado"])
+	elif sucesos.size() > 0:
+		titular = "La central del 112 atiende %d emergencias en un solo turno" % sucesos.size()
+		sub = "Policía Local, sanitarios y bomberos han trabajado sin descanso."
+	var breves: Array = []
+	for su in sucesos:
+		if su != mejor and su != muerte and breves.size() < 4:
+			breves.append("%s: %s" % [su["titulo"], su["resultado"]])
+	breves.append("El tiempo: %s." % String(CLIMAS[clima]["nombre"]).to_lower())
+	if stats["heridos"] > 0:
+		breves.append("%d agentes heridos durante el servicio." % stats["heridos"])
+	var nota := "sin valorar" if stats["valoradas"] == 0 else "%.1f de 5" % media
+	return {"fecha": "Día %d de servicio · %s" % [partida["dia"] - 1, TURNOS[turno]["nombre"]],
+		"titular": titular, "subtitulo": sub, "breves": breves,
+		"pie": "Valoración de los vecinos: %s · Llamadas atendidas: %d · Emergencias resueltas: %d" % [nota, stats["llamadas"], stats["resueltas"]]}
 
 
 ## Genera llamadas y avisos al azar, con ratos de calma entre medias.
@@ -581,6 +656,13 @@ func _evento_aleatorio() -> void:
 	var extra_max: int = {"tranquila": -1, "normal": 0, "caotica": 2}.get(opciones["dificultad"], 0)
 	if activos >= 3 + mini(partida["dia"] - 1, 3) + extra_max:
 		return
+	# El tiempo también trae sus propias emergencias
+	if clima == "tormenta" and randf() < 0.18:
+		_crear_incendio("Incendio por la caída de un rayo")
+		return
+	if clima == "calor" and randf() < 0.22:
+		_aviso_directo("caida_mayor", "Golpe de calor: persona mayor desmayada en la calle")
+		return
 	var r := randf()
 	if r < 0.35:
 		# Llamada que hay que atender
@@ -590,13 +672,77 @@ func _evento_aleatorio() -> void:
 			_aviso_directo()
 	elif r < 0.65:
 		# Emergencia menor: solo un aviso y aparece sola en el mapa
-		_aviso_directo()
+		if (clima == "lluvia" or clima == "tormenta" or clima == "niebla") and randf() < 0.4:
+			_aviso_directo("accidente_trafico", "Accidente por la calzada mojada" if clima != "niebla" else "Accidente por la niebla")
+		else:
+			_aviso_directo()
 	elif r < 0.77 and sospechoso == null:
 		_crear_aviso_trafico()
 	elif r < 0.9:
 		_crear_incendio()
 	else:
 		_aviso_patrulla()
+
+
+# ================================================================ METEOROLOGÍA
+
+func _clima_de_menu() -> void:
+	clima = "despejado"
+	efectos.activo = false
+	efectos.set_clima("despejado")
+
+
+func _elegir_clima() -> void:
+	if not bool(opciones["meteo"]):
+		_poner_clima("despejado", false)
+		return
+	var pesos := {"despejado": 50.0, "lluvia": 18.0, "niebla": 8.0 if turno == "dia" else 16.0,
+		"tormenta": 8.0, "calor": 14.0 if turno == "dia" else 0.0}
+	_poner_clima(_sortear(pesos), false)
+	hud.notificar("Parte meteorológico: %s." % String(CLIMAS[clima]["nombre"]).to_lower(), CLIMAS[clima]["color"])
+	_programar(randf_range(280.0, 520.0), _cambio_clima)
+
+
+func _sortear(pesos: Dictionary) -> String:
+	var total := 0.0
+	for k in pesos:
+		total += float(pesos[k])
+	var tirada := randf() * total
+	for k in pesos:
+		tirada -= float(pesos[k])
+		if tirada <= 0.0 and float(pesos[k]) > 0.0:
+			return k
+	return pesos.keys()[0]
+
+
+## A mitad del turno el tiempo puede cambiar.
+func _cambio_clima() -> void:
+	if en_menu or turno_terminando or not bool(opciones["meteo"]) or randf() > 0.45:
+		return
+	var nuevo := "despejado"
+	if clima == "despejado":
+		nuevo = _sortear({"lluvia": 3.0, "niebla": 2.0 if turno == "noche" else 1.0, "tormenta": 2.0, "calor": 2.0 if turno == "dia" else 0.0})
+	elif clima == "lluvia" and randf() < 0.4:
+		nuevo = "tormenta"
+	_poner_clima(nuevo, true)
+
+
+func _poner_clima(nuevo: String, avisar: bool) -> void:
+	clima = nuevo
+	efectos.set_clima(nuevo)
+	hud.set_clima(CLIMAS[nuevo]["nombre"], CLIMAS[nuevo]["color"])
+	_actualizar_trafico()
+	if not avisar:
+		return
+	var textos := {
+		"despejado": "Parte meteorológico: el tiempo mejora y el cielo se despeja.",
+		"lluvia": "Parte meteorológico: empieza a llover. Las unidades irán más despacio y habrá más accidentes.",
+		"niebla": "Parte meteorológico: banco de niebla. Las unidades irán más despacio.",
+		"tormenta": "Parte meteorológico: ¡tormenta eléctrica! Cuidado con los rayos y la calzada mojada.",
+		"calor": "Parte meteorológico: ola de calor. Atentos a los golpes de calor y los incendios.",
+	}
+	hud.notificar(textos.get(nuevo, ""), CLIMAS[nuevo]["color"])
+	_sonido("alerta")
 
 
 # ================================================================ BUCLE
@@ -623,7 +769,10 @@ func _process(delta: float) -> void:
 			_t_historias = 1.0
 			_vigilar_historias()
 	_ajustar_iconos()
-	modulador.color = _color_hora(fmod(segundos_sim / 3600.0, 24.0))
+	var hora := fmod(segundos_sim / 3600.0, 24.0)
+	modulador.color = _color_hora(hora) * _tinte_clima()
+	efectos.noche = _factor_noche(hora)
+	efectos.zoom = camara.zoom.x
 	capa_rutas.queue_redraw()
 	_t_barra -= delta
 	if _t_barra <= 0.0:
@@ -647,6 +796,7 @@ func _actualizar_trafico() -> void:
 		f = 0.8
 	elif h >= 23.0 or h < 6.0:
 		f = 1.15
+	f *= float(CLIMAS[clima]["velocidad"])
 	for v in vehiculos:
 		v.factor_trafico = f
 	if sospechoso != null and is_instance_valid(sospechoso):
@@ -669,12 +819,40 @@ func _mover_camara(delta: float) -> void:
 	# La cámara va a la misma velocidad aunque el tiempo esté acelerado o lento
 	var d := delta / maxf(Engine.time_scale, 0.01)
 	var v := Input.get_vector("mover_izquierda", "mover_derecha", "mover_arriba", "mover_abajo")
+	if tween_camara != null and tween_camara.is_valid():
+		if v.length() < 0.2:
+			return
+		tween_camara.kill()
 	camara.position += v * 650.0 * d / camara.zoom.x
 	var z := Input.get_action_strength("zoom_mas") - Input.get_action_strength("zoom_menos")
 	if absf(z) > 0.05:
 		var nz := clampf(camara.zoom.x * (1.0 + z * 1.6 * d), 0.3, 2.2)
 		camara.zoom = Vector2(nz, nz)
 	camara.position = camara.position.clamp(Vector2.ZERO, tamano_mapa)
+
+
+## 0 de día, 1 de noche cerrada (para las farolas y los faros).
+func _factor_noche(h: float) -> float:
+	if h >= 21.0 or h < 6.0:
+		return 1.0
+	if h >= 19.0:
+		return (h - 19.0) / 2.0
+	if h < 8.0:
+		return 1.0 - (h - 6.0) / 2.0
+	return 0.0
+
+
+func _tinte_clima() -> Color:
+	match clima:
+		"lluvia":
+			return Color(0.82, 0.86, 0.95)
+		"tormenta":
+			return Color(0.68, 0.72, 0.85)
+		"niebla":
+			return Color(0.9, 0.92, 0.96)
+		"calor":
+			return Color(1.0, 0.96, 0.88)
+	return Color.WHITE
 
 
 ## Color del ambiente según la hora (amanecer, día, atardecer, noche).
@@ -692,8 +870,12 @@ func _color_hora(h: float) -> Color:
 	return atardecer.lerp(noche, h - 20.0)
 
 
+## Ruta de cada unidad en emergencia: línea brillante con pulsos que avanzan
+## hacia el destino y, al final, el tiempo que le falta para llegar.
 func _dibujar_rutas() -> void:
 	var ancho := 5.0 / camara.zoom.x
+	var esc := clampf(1.0 / camara.zoom.x, 0.6, 3.5)
+	var f := ThemeDB.fallback_font
 	for v in vehiculos:
 		if v.ruta.is_empty() or not v.en_emergencia:
 			continue
@@ -702,10 +884,53 @@ func _dibujar_rutas() -> void:
 			pts.append(red.pos(n))
 		if pts.size() < 2:
 			continue
-		capa_rutas.draw_polyline(pts, Color(0.6, 0.85, 1.0, 0.18), ancho * 3.0)
-		capa_rutas.draw_polyline(pts, Color(0.85, 0.95, 1.0, 0.45), ancho * 1.6)
-		capa_rutas.draw_polyline(pts, Color(1, 1, 1, 0.95), ancho * 0.6)
-		capa_rutas.draw_circle(pts[pts.size() - 1], ancho * 1.4, Color.WHITE)
+		var col: Color = COLOR_SERVICIO.get(v.servicio, Color.WHITE)
+		capa_rutas.draw_polyline(pts, Color(col, 0.16), ancho * 3.0)
+		capa_rutas.draw_polyline(pts, Color(0.85, 0.95, 1.0, 0.4), ancho * 1.4)
+		# Pulsos que avanzan por la ruta
+		var largo := 0.0
+		for k in range(1, pts.size()):
+			largo += pts[k - 1].distance_to(pts[k])
+		var separacion := 90.0
+		var desfase := fmod(tiempo_juego * 160.0, separacion)
+		var recorrido := 0.0
+		var marca := desfase
+		for k in range(1, pts.size()):
+			var tramo := pts[k - 1].distance_to(pts[k])
+			while marca <= recorrido + tramo:
+				var punto := pts[k - 1].lerp(pts[k], (marca - recorrido) / maxf(tramo, 0.01))
+				capa_rutas.draw_circle(punto, ancho * 0.9, Color(1, 1, 1, 0.95))
+				marca += separacion
+			recorrido += tramo
+		var fin_ruta := pts[pts.size() - 1]
+		capa_rutas.draw_circle(fin_ruta, ancho * 1.6, col)
+		capa_rutas.draw_arc(fin_ruta, ancho * 2.4 + fmod(tiempo_juego, 1.0) * ancho * 3.0, 0.0, TAU, 24, Color(col, 1.0 - fmod(tiempo_juego, 1.0)), ancho * 0.5)
+		# Etiqueta con el tiempo que falta
+		if v.fase in ["ida", "buscando2", "traslado"]:
+			var texto := "%s · %s" % [v.id_unidad, _texto_segundos(v.tiempo_restante())]
+			capa_rutas.draw_set_transform(fin_ruta + Vector2(0, -34) * esc, 0.0, Vector2(esc, esc))
+			var w := f.get_string_size(texto, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 14.0
+			capa_rutas.draw_rect(Rect2(-w / 2.0, -20, w, 24), Color(0.02, 0.06, 0.15, 0.85))
+			capa_rutas.draw_rect(Rect2(-w / 2.0, -20, w, 24), col, false, 2.0)
+			capa_rutas.draw_string(f, Vector2(-w / 2.0 + 7, -2), texto, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+			capa_rutas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## Pequeño viaje de cámara hasta una emergencia grave y vuelta a donde estabas.
+## Si mueves el joystick, se cancela.
+func _viaje_camara(destino: Vector2) -> void:
+	if en_menu or hud.ventana_abierta() or unidad_a_enviar != null:
+		return
+	if tween_camara != null and tween_camara.is_valid():
+		return
+	var origen := camara.position
+	tween_camara = create_tween()
+	if tween_camara.has_method("set_ignore_time_scale"):
+		tween_camara.call("set_ignore_time_scale", true)
+	tween_camara.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween_camara.tween_property(camara, "position", destino, 0.9)
+	tween_camara.tween_interval(1.6)
+	tween_camara.tween_property(camara, "position", origen, 0.9)
 
 
 func _hora(s: float) -> String:
@@ -1032,6 +1257,8 @@ func _mostrar_incidente(inc) -> void:
 			var etiqueta := "Enviar %s (%s) · llega en %s" % [v.id_unidad, v.nombre_servicio(), _texto_segundos(item[4])]
 			if v.estado == "Regresando":
 				etiqueta += " · desde la vuelta (%d/%d servicios)" % [v.servicios_seguidos, v.limite_seguidos()]
+			if v.estado == "Reponiendo material":
+				etiqueta = "%s sin material: volviendo a la base a reponer" % v.id_unidad
 			if not item[3]:
 				etiqueta += " · como apoyo"
 			if not item[2]:
@@ -1039,6 +1266,7 @@ func _mostrar_incidente(inc) -> void:
 			opciones.append({"texto": etiqueta, "accion": _enviar_unidad.bind(v, inc), "activo": item[2]})
 	opciones.append({"texto": "Volver al mapa", "accion": _cerrar_panel})
 	hud.mostrar_panel("%s · %s" % [inc.id_incidente, inc.titulo], texto, opciones)
+	hud.mirar_lugar(inc)
 
 
 # ================================================================ LLAMADAS
@@ -1089,9 +1317,10 @@ func _hacer_sonar() -> void:
 	hora_llamada = _hora(segundos_sim)
 	contador_llamadas += 1
 	var extra := " · posible relación con %s" % llamada_rel_inc.id_incidente if llamada_rel_inc != null else ""
-	hud.mostrar_aviso_llamada("Localidad: Miguelturra · %s%s" % [hora_llamada, extra])
+	hud.mostrar_aviso_llamada("Localidad: Miguelturra · %s%s" % [hora_llamada, extra], SEGUNDOS_PARA_COLGAR)
 	hud.notificar("Llamada entrante al 112", COLOR_LLAMADA)
 	_sonido("llamada")
+	_vibrar(0.6, 0.4, 0.7)
 	_consejo("llamada", "Te están llamando: pulsa X para contestar. Si tardas más de 25 segundos, la persona cuelga.")
 	_programar(SEGUNDOS_PARA_COLGAR, _llamada_sin_contestar.bind(contador_llamadas))
 
@@ -1202,7 +1431,7 @@ func _refrescar_llamada() -> void:
 	for c in llamada.confirmados:
 		datos_vistos.append("CONFIRMADO: " + c)
 	hud.actualizar_llamada(cabecera, llamada.texto_actual, llamada.calma, llamada.estado_emocional(),
-		Incidente.NOMBRES_PRECISION[llamada.precision], datos_vistos, textos)
+		Incidente.NOMBRES_PRECISION[llamada.precision], datos_vistos, textos, llamada.precision)
 
 
 func _elegir_opcion(indice: int) -> void:
@@ -1405,6 +1634,8 @@ func _aplicar_efectos_historia(inc, e: Dictionary) -> void:
 			inc.informacion.append(i)
 	if e.has("marca"):
 		inc.marcas.append(e["marca"])
+	if e.has("heridos"):
+		inc.heridos = maxi(inc.heridos, int(e["heridos"]))
 
 
 func _mostrar_decision(inc, dec: Dictionary) -> void:
@@ -1414,6 +1645,7 @@ func _mostrar_decision(inc, dec: Dictionary) -> void:
 		opciones.append({"texto": o["texto"], "accion": _decision_historia.bind(inc, o)})
 	_sonido("alerta")
 	hud.mostrar_panel("%s · %s" % [inc.id_incidente, dec["titulo"]], "La unidad espera tus órdenes.\n" + inc.titulo, opciones)
+	hud.mirar_lugar(inc)
 	_consejo("decision", "A veces las unidades te piden órdenes en el lugar. Lo que decidas cambia cómo termina la historia.")
 
 
@@ -1471,6 +1703,8 @@ func _final_historia(inc) -> void:
 			continue
 		inc.resultado = String(regla["texto"]).format(inc.variables)
 		inc.ajuste_estrellas = int(regla.get("estrellas", 0))
+		if regla.get("fallecido", false):
+			inc.fallecidos = maxi(inc.fallecidos, 1)
 		if regla.has("exito_final"):
 			inc.exito = bool(regla["exito_final"])
 		if inc.exito:
@@ -1487,6 +1721,7 @@ func _radio(v, mensaje: String) -> void:
 	elif v.servicio == "bomberos":
 		color = COLOR_RADIO_BOMBEROS
 	hud.notificar("%s: «%s»" % [v.id_unidad, mensaje], color)
+	efectos.burbuja(v, mensaje, color)
 	_sonido("radio")
 
 
@@ -1533,11 +1768,12 @@ func _on_unidad_llega(v) -> void:
 			_radio(v, "Paciente entregado en el Hospital General de Ciudad Real.")
 			_programar(6.0, _regresar.bind(v))
 		"regreso":
+			var reponia: bool = v.estado == "Reponiendo material"
 			v.servicios_seguidos = 0
 			v.estado = "Disponible" if v.efectivos() > 0 else "Sin personal"
 			v.fase = ""
 			v.incidente = null
-			_radio(v, "En base y disponibles.")
+			_radio(v, "Material repuesto. En base y disponibles." if reponia else "En base y disponibles.")
 
 
 func _fin_busqueda(v) -> void:
@@ -1564,6 +1800,18 @@ func _comenzar_intervencion(v) -> void:
 		_radio(v, "En el lugar. La situación ya está controlada, volvemos.")
 		_programar(4.0, _regresar.bind(v))
 		return
+	if not inc.en_escena.has(v):
+		inc.en_escena.append(v)
+	inc.llegadas[v.id_unidad] = tiempo_juego
+	if String(inc.evento).begins_with("tramites"):
+		if v.servicio == "policia" and inc.evento == "tramites_espera":
+			inc.en_lugar.append(v)
+			inc.presentes["policia"] = 1
+			_iniciar_tramites(inc, v)
+		else:
+			_radio(v, "En el lugar. La policía se encarga de los trámites; nos retiramos.")
+			_programar(4.0, _regresar.bind(v))
+		return
 	if not inc.requeridas.has(v.servicio):
 		if inc.historia != null:
 			_procesar_historia(inc, "llegada", v.servicio)
@@ -1572,7 +1820,6 @@ func _comenzar_intervencion(v) -> void:
 		if int(inc.presentes.get(inc.servicio_necesario, 0)) == 0:
 			v.fase = "primera_respuesta"
 			inc.apoyos.append(v)
-			hud.mostrar_lugar(inc)
 			_radio(v, "Somos los primeros en llegar. Atendemos y tranquilizamos a los afectados hasta que llegue %s." % NOMBRES_SERVICIO.get(inc.servicio_necesario, "el servicio adecuado").to_lower())
 			inc.registrar(_hora(segundos_sim), "%s atiende como primera respuesta" % v.id_unidad)
 			_consejo("primera_respuesta", "Si no tienes la unidad adecuada libre, puedes mandar otra (por ejemplo, la policía) para que atienda mientras tanto: la situación empeora más despacio.")
@@ -1593,8 +1840,7 @@ func _comenzar_intervencion(v) -> void:
 		_liberar_apoyos(inc, v)
 	if v.servicio == inc.servicio_necesario and inc.tiempo_llegada < 0.0:
 		inc.tiempo_llegada = tiempo_juego
-	hud.mostrar_lugar(inc)
-	_consejo("lugar", "Abajo a la izquierda ves lo que pasa en el lugar. Más personal y mejor equipo hacen que vaya más rápido.")
+	_consejo("lugar", "Ya hay unidades en el lugar: abre la emergencia (Triángulo o con la mira) y a la izquierda verás lo que está pasando. Más personal y mejor equipo hacen que vaya más rápido.")
 	# Historia: al llegar puede descubrirse algo o pedirse una decisión
 	if inc.historia != null:
 		inc.registrar(_hora(segundos_sim), "%s llega al lugar" % v.id_unidad)
@@ -1667,7 +1913,7 @@ func _pedir_refuerzos(inc) -> void:
 	else:
 		hud.notificar("%s: %s" % [inc.id_incidente, mensaje], Color("ffd166"))
 	_sonido("alerta")
-	hud.mostrar_lugar(inc)
+	_vibrar(0.3, 0.6, 0.4)
 
 
 ## Avanza los mini eventos "En el lugar" que estén en marcha.
@@ -1684,6 +1930,8 @@ func _actualizar_eventos(delta: float) -> void:
 			inc.t_refuerzos -= delta
 			if inc.t_refuerzos <= 0.0:
 				_finalizar_evento(inc, false)
+		elif inc.evento == "tramites":
+			inc.progreso = minf(inc.progreso + delta / DURACION_TRAMITES, 0.99)
 
 
 ## Más personal y mejor equipo = la intervención va más rápida.
@@ -1772,6 +2020,15 @@ func _finalizar_evento(inc, exito: bool) -> void:
 					stats["heridos"] += 1
 					inc.resultado += " Un agente de %s ha resultado herido." % v.id_unidad
 					break
+	if inc.historia == null and inc.fallecidos == 0 and not exito:
+		# Sin historia: si la espera fue demasiado larga, alguien puede morir
+		if inc.categoria in ["medico", "atrapado"] and inc.empeorado and randf() < 0.45:
+			inc.fallecidos = 1
+		elif inc.categoria == "fuego" and inc.intensidad >= 3 and randf() < 0.3:
+			inc.fallecidos = 1
+	if inc.fallecidos > 0:
+		_abrir_tramites(inc)
+		return
 	var quien = inc.en_lugar[0] if inc.en_lugar.size() > 0 else null
 	if quien != null and is_instance_valid(quien):
 		_radio(quien, inc.resultado)
@@ -1792,11 +2049,88 @@ func _finalizar_evento(inc, exito: bool) -> void:
 				_trasladar(v)
 			else:
 				_regresar(v)
-	_programar(5.0, _ocultar_lugar.bind(inc))
 
 
-func _ocultar_lugar(inc) -> void:
-	hud.ocultar_lugar(inc)
+# ================================================================ FALLECIMIENTOS Y TRÁMITES
+## Si alguien fallece, la ambulancia no lo traslada: el sanitario certifica la
+## muerte, la policía custodia el lugar y toma declaración, después llegan el
+## juzgado de guardia y el forense, y la funeraria hace el levantamiento.
+
+func _abrir_tramites(inc) -> void:
+	stats["fallecidos"] = int(stats.get("fallecidos", 0)) + 1
+	inc.traslado = false
+	inc.estado = "Trámites por fallecimiento"
+	inc.evento = "tramites_espera"
+	inc.progreso = 0.0
+	inc.tramites_paso = 0
+	inc.urgencia_total = 0.0
+	inc.registrar(_hora(segundos_sim), "Fallecimiento confirmado: %s" % inc.resultado)
+	var sanitario = null
+	var policia = null
+	for v in inc.en_lugar + inc.apoyos:
+		if not is_instance_valid(v) or v.incidente != inc:
+			continue
+		if v.servicio == "ambulancia" and sanitario == null:
+			sanitario = v
+		if v.servicio == "policia" and policia == null:
+			policia = v
+	if sanitario != null:
+		_radio(sanitario, "Lo sentimos, central: el médico certifica el fallecimiento. Hay que avisar al juzgado de guardia.")
+	else:
+		hud.notificar("%s: ha fallecido una persona. Hay que avisar al juzgado de guardia." % inc.id_incidente, Color("cfd9e6"))
+	# La policía se queda; el resto de unidades se retiran
+	for v in (inc.en_lugar + inc.apoyos).duplicate():
+		if is_instance_valid(v) and v.incidente == inc and v != policia:
+			v.servicios_seguidos += 1
+			_regresar(v)
+	inc.apoyos.clear()
+	inc.en_lugar = [policia] if policia != null else []
+	inc.servicios = ["policia"]
+	inc.servicio_necesario = "policia"
+	inc.requeridas = {"policia": 1}
+	inc.presentes = {"policia": 1 if policia != null else 0}
+	_sonido("alerta")
+	if policia != null:
+		_iniciar_tramites(inc, policia)
+	else:
+		hud.notificar("%s: hace falta una patrulla para custodiar el lugar y tomar declaración. Pulsa Triángulo." % inc.id_incidente, COLOR_RADIO_POLICIA)
+	_consejo("tramites", "Cuando alguien fallece, manda una patrulla: custodia el lugar y toma declaración. Después llegan el juzgado y el forense, y la funeraria se encarga del levantamiento.")
+
+
+func _iniciar_tramites(inc, v) -> void:
+	inc.evento = "tramites"
+	inc.progreso = 0.0
+	inc.tramites_paso = 0
+	inc.estado = "Trámites por fallecimiento"
+	_radio(v, "Lugar acordonado. Tomamos declaración a los testigos y esperamos al juzgado.")
+	inc.registrar(_hora(segundos_sim), "%s custodia el lugar y toma declaración" % v.id_unidad)
+	_programar(DURACION_TRAMITES * 0.35, _paso_tramites.bind(inc, 1))
+	_programar(DURACION_TRAMITES * 0.7, _paso_tramites.bind(inc, 2))
+	_programar(DURACION_TRAMITES, _fin_tramites.bind(inc))
+
+
+func _paso_tramites(inc, paso: int) -> void:
+	if not is_instance_valid(inc) or inc.evento != "tramites":
+		return
+	inc.tramites_paso = paso
+	var texto := "el juzgado de guardia y el médico forense llegan al lugar." if paso == 1 else "la funeraria realiza el levantamiento del cuerpo."
+	hud.notificar("%s: %s" % [inc.id_incidente, texto], Color("cfd9e6"))
+	inc.registrar(_hora(segundos_sim), texto)
+
+
+func _fin_tramites(inc) -> void:
+	if not is_instance_valid(inc) or inc.evento != "tramites":
+		return
+	inc.evento = "terminado"
+	inc.estado = "Resuelta"
+	inc.progreso = 1.0
+	inc.resultado += " Trámites completados: declaración, juzgado y levantamiento."
+	for v in inc.en_lugar.duplicate():
+		if is_instance_valid(v) and v.incidente == inc:
+			_radio(v, "Trámites terminados. Quedamos disponibles.")
+			v.servicios_seguidos += 1
+			_regresar(v)
+	_informe_incidente(inc)
 
 
 func _texto_resultado(inc, exito: bool) -> String:
@@ -1844,6 +2178,11 @@ func _regresar(v) -> void:
 		return
 	v.fase = "regreso"
 	v.estado = "Regresando"
+	# Ambulancia sin material (ya ha hecho todos sus servicios seguidos):
+	# vuelve más rápido a la base para reponer y no se le pueden dar más avisos.
+	if v.servicio == "ambulancia" and v.servicios_seguidos >= v.limite_seguidos():
+		v.estado = "Reponiendo material"
+		_radio(v, "Nos hemos quedado sin material. Volvemos rápido a la base a reponer.")
 	v.ir_a(v.nodo_base)
 
 
@@ -1884,6 +2223,9 @@ func _informe_incidente(inc) -> void:
 	if inc.marcas.has("sin_equipo"):
 		estrellas -= 1
 		consecuencias.append("Faltaba el equipo adecuado.")
+	if inc.fallecidos > 0:
+		estrellas -= 1
+		consecuencias.append("Ha fallecido una persona. Se han hecho los trámites judiciales.")
 	if inc.categoria == "atrapado" and not (_alguno_tiene(inc, "tecnico") or _alguno_con_bono(inc, "rescate")):
 		consecuencias.append("Los bomberos no llevaban equipo técnico de excarcelación.")
 	if inc.categoria == "fuego" and inc.intensidad > 1:
@@ -1891,6 +2233,8 @@ func _informe_incidente(inc) -> void:
 		consecuencias.append("El fuego se extendió antes de que llegaran los bomberos (nivel %d)." % inc.intensidad)
 	estrellas = clampi(estrellas, 1, 5)
 	_sumar_estadisticas(estrellas, t_llegada)
+	stats["sucesos"].append({"titulo": inc.titulo, "resultado": inc.resultado, "estrellas": estrellas,
+		"fallecido": inc.fallecidos > 0, "historia": inc.historia != null, "calle": red.calle_de_nodo(inc.nodo_real) if inc.nodo_real >= 0 else ""})
 	var pago := 600 + estrellas * 400
 	_cambiar_dinero(pago)
 	var precision_envio: int = inc.precision_al_enviar if inc.precision_al_enviar >= 0 else inc.precision
@@ -1905,6 +2249,7 @@ func _informe_incidente(inc) -> void:
 	if inc.llamadas_relacionadas > 0:
 		texto += "\nLlamadas relacionadas: %d" % inc.llamadas_relacionadas
 	hud.mostrar_panel("INFORME · %s · %s" % [inc.id_incidente, inc.titulo], texto, [{"texto": "Aceptar", "accion": _cerrar_panel}])
+	hud.mirar_lugar(inc, true)
 	_consejo("informe", "Cada emergencia resuelta te da dinero según la nota. Con él podrás comprar vehículos y equipo antes del siguiente turno.")
 
 
@@ -1935,10 +2280,13 @@ func _vigilar_urgencias() -> void:
 
 ## Emergencia menor que no necesita conversación: llega como aviso a la
 ## izquierda de la pantalla y aparece directamente en el mapa.
-func _aviso_directo() -> void:
+func _aviso_directo(forzar_id: String = "", titulo: String = "") -> void:
 	var posibles := []
 	for d in DatosLlamadas.LLAMADAS:
-		if not d.get("falsa", false) and (d["turno"] == turno or d["turno"] == "ambos"):
+		if forzar_id != "":
+			if d["id"] == forzar_id:
+				posibles.append(d)
+		elif not d.get("falsa", false) and (d["turno"] == turno or d["turno"] == "ambos"):
 			posibles.append(d)
 	if posibles.is_empty():
 		return
@@ -1953,7 +2301,8 @@ func _aviso_directo() -> void:
 	inc.categoria = d.get("categoria", "medico")
 	inc.tipo = "incendio" if inc.categoria == "fuego" else "aviso_directo"
 	inc.fuente = "Aviso recibido por la centralita"
-	inc.titulo = d["titulo"]
+	inc.titulo = d["titulo"] if titulo == "" else titulo
+	inc.clima = clima
 	inc.servicios = d["servicios"].duplicate()
 	inc.servicio_necesario = d["principal"]
 	inc.requeridas = d.get("requeridas", {d["principal"]: 1}).duplicate()
@@ -2030,7 +2379,7 @@ func _aviso_patrulla() -> void:
 
 # ================================================================ INCENDIOS
 
-func _crear_incendio() -> void:
+func _crear_incendio(titulo: String = "") -> void:
 	var edificios: Array = datos_mapa["edificios"]
 	if edificios.is_empty():
 		return
@@ -2056,7 +2405,7 @@ func _crear_incendio() -> void:
 	inc.tipo = "incendio"
 	inc.servicio_necesario = "bomberos"
 	inc.servicios = ["bomberos"]
-	inc.titulo = "Incendio en edificio"
+	inc.titulo = "Incendio en edificio" if titulo == "" else titulo
 	inc.fuente = "Aviso automático (detector de humo)"
 	inc.informacion = ["Sale humo de un edificio en %s" % calle]
 	inc.categoria = "fuego"
@@ -2080,6 +2429,7 @@ func _crear_incendio() -> void:
 	incidentes.append(inc)
 	hud.notificar("AVISO AUTOMÁTICO: humo detectado en un edificio de %s. Pulsa Triángulo para verlo." % calle, COLOR_RADIO_BOMBEROS)
 	_sonido("alerta")
+	_viaje_camara(inc.position)
 
 
 # ================================================================ AVISO DE TRÁFICO + PERSECUCIÓN
@@ -2136,6 +2486,7 @@ func _mostrar_aviso(inc) -> void:
 		opciones.append({"texto": "No intervenir", "accion": _descartar_aviso.bind(inc)})
 	opciones.append({"texto": "Volver al mapa", "accion": _cerrar_panel})
 	hud.mostrar_panel("%s · %s" % [inc.id_incidente, inc.titulo], texto, opciones)
+	hud.mirar_lugar(inc)
 
 
 func _iniciar_persecucion(v, inc) -> void:
@@ -2189,7 +2540,9 @@ func _on_interceptado(patrulla, objetivo) -> void:
 	inc.vehiculo_seguido = null
 	inc.pos_exacta = objetivo.position
 	inc.position = objetivo.position
-	hud.mostrar_lugar(inc)
+	if not inc.en_escena.has(patrulla):
+		inc.en_escena.append(patrulla)
+	inc.llegadas[patrulla.id_unidad] = tiempo_juego
 
 
 func _retirar_sospechoso(patrulla, objetivo) -> void:
@@ -2241,6 +2594,13 @@ func _crear_sonidos() -> void:
 func _repetir_tono() -> void:
 	if llamada_sonando:
 		sonidos["llamada"].play()
+
+
+func _vibrar(debil: float, fuerte: float, segundos: float) -> void:
+	if not bool(opciones.get("vibracion", true)):
+		return
+	for id in Input.get_connected_joypads():
+		Input.start_joy_vibration(id, debil, fuerte, segundos)
 
 
 func _sonido(nombre: String) -> void:
@@ -2380,6 +2740,7 @@ func _mostrar_portada() -> void:
 		hud.cerrar_llamada()
 	hud.ocultar_aviso_llamada()
 	hud.mostrar_portada(true)
+	_clima_de_menu()
 	decoracion.visible = true
 	modulador.color = Color(0.55, 0.62, 0.95)
 	camara.zoom = Vector2(0.55, 0.55)
@@ -2404,6 +2765,8 @@ func _menu_principal() -> void:
 
 func _animar_portada(delta: float) -> void:
 	_t_portada += delta
+	efectos.noche = 1.0
+	efectos.zoom = camara.zoom.x
 	var centro := _pos_lugar("Plaza de España", tamano_mapa / 2.0)
 	camara.position = centro + Vector2(cos(_t_portada * 0.05) * 450.0, sin(_t_portada * 0.07) * 300.0)
 	decoracion.queue_redraw()
@@ -2421,7 +2784,11 @@ func _dibujar_decoracion() -> void:
 			var tramo := pts[k - 1].distance_to(pts[k])
 			if avance <= tramo:
 				var p := pts[k - 1].lerp(pts[k], avance / maxf(tramo, 0.01))
-				decoracion.draw_circle(p, 26.0, Color(0.6, 0.85, 1.0, 0.25))
+				# Coche con las sirenas encendidas: destellos rojo y azul
+				var rojo := int(_t_portada * 5.0 + k) % 2 == 0
+				var col := Color(1.0, 0.2, 0.2) if rojo else Color(0.25, 0.45, 1.0)
+				decoracion.draw_circle(p, 90.0, Color(col, 0.10))
+				decoracion.draw_circle(p, 40.0, Color(col, 0.22))
 				decoracion.draw_circle(p, 10.0, Color.WHITE)
 				break
 			avance -= tramo
@@ -2504,6 +2871,13 @@ func _aplicar_opciones() -> void:
 	if vol > 0.01:
 		AudioServer.set_bus_volume_db(0, linear_to_db(vol))
 	hud.set_texto_grande(opciones["texto_grande"])
+	hud.texto_animado = bool(opciones["texto_animado"])
+	var alta: bool = opciones["calidad"] == "alta"
+	hud.vista_lugar.calidad_alta = alta
+	if efectos != null:
+		efectos.calidad_alta = alta
+	if mapa != null:
+		mapa.calidad_alta = alta
 
 
 func _mostrar_opciones() -> void:
@@ -2512,9 +2886,13 @@ func _mostrar_opciones() -> void:
 		{"texto": "Volumen: %d %%" % int(round(float(opciones["volumen"]) * 100.0)), "accion": _cambiar_volumen},
 		{"texto": "Tamaño del texto: %s" % ("Grande" if opciones["texto_grande"] else "Normal"), "accion": _cambiar_texto},
 		{"texto": "Dificultad: %s" % nombres_dif.get(opciones["dificultad"], "Normal"), "accion": _cambiar_dificultad},
+		{"texto": "Calidad gráfica: %s" % ("Alta" if opciones["calidad"] == "alta" else "Normal (más fluida)"), "accion": _cambiar_opcion.bind("calidad")},
+		{"texto": "Texto de las llamadas: %s" % ("Se va escribiendo" if opciones["texto_animado"] else "Aparece de golpe"), "accion": _cambiar_opcion.bind("texto_animado")},
+		{"texto": "Meteorología (lluvia, niebla...): %s" % ("Sí" if opciones["meteo"] else "No"), "accion": _cambiar_opcion.bind("meteo")},
+		{"texto": "Vibración del mando: %s" % ("Sí" if opciones["vibracion"] else "No"), "accion": _cambiar_opcion.bind("vibracion")},
 		{"texto": "Configurar botones del mando", "accion": _calibrar_desde_portada},
 		{"texto": "Volver", "accion": _menu_principal},
-	], true, 340.0, 560.0)
+	], true, 190.0, 640.0)
 
 
 func _cambiar_volumen() -> void:
@@ -2531,6 +2909,17 @@ func _cambiar_texto() -> void:
 	opciones["texto_grande"] = not opciones["texto_grande"]
 	_aplicar_opciones()
 	_guardar_opciones()
+	_mostrar_opciones()
+
+
+func _cambiar_opcion(clave: String) -> void:
+	if clave == "calidad":
+		opciones["calidad"] = "normal" if opciones["calidad"] == "alta" else "alta"
+	else:
+		opciones[clave] = not bool(opciones[clave])
+	_aplicar_opciones()
+	_guardar_opciones()
+	_sonido("click")
 	_mostrar_opciones()
 
 
@@ -2573,7 +2962,7 @@ const PAGINAS_TUTORIAL := [
 	["2 · EL MAPA", "Joystick izquierdo: mover el mapa. L2/R2: zoom.\nLos hexágonos son emergencias: blanco = ambulancia, azul = policía, rojo = bomberos (si necesita varios servicios, sale con varios colores).\nEl anillo que se vacía es el tiempo antes de que empeore."],
 	["3 · LAS LLAMADAS", "Cuando suene, pulsa X para contestar. Mientras hablas, el tiempo va más lento.\nTranquiliza a la persona, averigua qué pasa y dónde está, y dale buenas instrucciones. Lo que preguntes cambia cómo acaba la historia."],
 	["4 · ENVIAR UNIDADES", "Abre una emergencia (mira + X o Triángulo) y elige qué unidad enviar. También puedes elegir primero la unidad con X y luego la emergencia.\nCuadrado: lista de unidades. L1/R1: velocidad del tiempo. L1 en x1: pausa táctica."],
-	["5 · EN EL LUGAR", "Al llegar, abajo a la izquierda ves lo que pasa. A veces las unidades piden refuerzos (+1 en el hexágono) o te piden órdenes.\nAntes de cada turno, en EQUIPOS puedes comprar vehículos, equipo y contratar personal."],
+	["5 · EN EL LUGAR", "Cuando haya unidades en el lugar, abre la emergencia y a la izquierda verás lo que pasa. A veces las unidades piden refuerzos (+1 en el hexágono) o te piden órdenes.\nAntes de cada turno, en EQUIPOS puedes comprar vehículos, equipo y contratar personal."],
 ]
 
 

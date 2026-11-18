@@ -20,6 +20,7 @@ const NOMBRES_SERVICIO := {
 	"sospechoso": "Vehículo sospechoso",
 }
 const FACTOR_SIN_EMERGENCIA := 0.45
+const FACTOR_REPONER := 0.8
 const FACTOR_PATRULLA := 0.35
 
 var id_unidad := ""
@@ -136,7 +137,9 @@ func patrullar() -> void:
 
 func velocidad_actual() -> float:
 	var v := velocidad
-	if not en_emergencia:
+	if estado == "Reponiendo material":
+		v *= FACTOR_REPONER   # sin material: vuelve a la base con prisa, sin sirenas
+	elif not en_emergencia:
 		v *= FACTOR_PATRULLA if estado == "Patrullando" else FACTOR_SIN_EMERGENCIA
 	return v * factor_trafico
 

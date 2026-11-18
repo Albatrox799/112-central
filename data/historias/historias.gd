@@ -138,6 +138,7 @@ const HISTORIAS := [
 		],
 		"finales": [
 			{"desenlace": "infarto", "marca": "rcp", "sin_empeorar": true, "texto": "¡Recuperado gracias a la reanimación guiada por teléfono! Trasladado estable.", "estrellas": 1},
+			{"desenlace": "infarto", "empeorado": true, "sin_marca": "rcp", "fallecido": true, "texto": "Sin reanimación a tiempo, no ha podido superar la parada cardiaca.", "exito_final": false},
 			{"desenlace": "infarto", "empeorado": true, "texto": "Llega al hospital en estado crítico.", "exito_final": false},
 			{"desenlace": "infarto", "texto": "Reanimado por los sanitarios y trasladado en estado grave."},
 			{"desenlace": "ictus", "empeorado": true, "texto": "Llega tarde al hospital: el ictus deja secuelas.", "exito_final": false},
@@ -409,6 +410,244 @@ const HISTORIAS := [
 			{"marca": "atrapado_bien", "texto": "Vecino rescatado por la ventana. ¡Gran coordinación!", "estrellas": 1},
 			{"desenlace": "cocina", "texto": "Incendio de cocina extinguido. Vecinos atendidos por el humo."},
 			{"desenlace": "garaje", "texto": "Incendio del garaje controlado. Edificio desalojado a tiempo."},
+		],
+	},
+	# ================================================================
+	# 4. "ACCIDENTE CON VARIOS HERIDOS" (tráfico, varios servicios)
+	# ================================================================
+	{
+		"id": "accidente_multiple", "turno": "ambos", "tipo": "llamada",
+		"referencias": ["gasolinera", "supermercado", "plaza", "deporte", "colegio", "comercio"],
+		"llamantes": [
+			{"desc": "Hombre, unos 50 años (testigo)", "calma": 40, "nombres": ["Ramón", "Francisco", "Julián", "Ángel", "Paco"],
+				"personalidades": [["nervioso", -10], ["muy alterado", -20], ["sereno", 15]]},
+			{"desc": "Mujer, unos 25 años (testigo)", "calma": 35, "nombres": ["Lucía", "Marta", "Andrea", "Paula", "Noelia"],
+				"personalidades": [["asustada", -10], ["en shock", -20], ["decidida", 15]]},
+		],
+		"estados": ["En pánico", "Muy alterado/a", "Nervioso/a", "Tranquilo/a"],
+		"desenlaces": {
+			"leve": {"peso": 3}, "grave": {"peso": 2}, "moto": {"peso": 2}, "humo": {"peso": 1},
+		},
+		"incidente": {"titulo": "Accidente de tráfico con varios heridos", "servicios": ["ambulancia", "policia"], "principal": "ambulancia",
+			"urgencia": 80.0, "intervencion": 12.0, "categoria": "medico", "requeridas": {"ambulancia": 1, "policia": 1}, "traslado": false},
+		"inicio": "inicio",
+		"nodos": {
+			"inicio": {"textos": ["¡Ha habido un accidente muy fuerte! ¡Dos coches han chocado delante de mí!",
+					"¡Acabo de ver un choque horrible! ¡Hay gente herida, vengan rápido!",
+					"Llamo por un accidente... un coche se ha saltado el ceda y se ha empotrado contra otro."],
+				"opciones": [
+					{"texto": "¿Hay heridos? ¿Cuántos?", "ir_a": "heridos"},
+					{"texto": "¿Está usted bien? ¿Está en un sitio seguro?", "efectos": {"calma": 10}, "ir_a": "seguro"},
+					{"texto": "¿Dónde ha sido exactamente?", "ir_a": "donde"}]},
+			"seguro": {"texto": "Sí, sí, estoy en la acera. Yo no iba en los coches.",
+				"opciones": [
+					{"texto": "Bien. ¿Hay heridos? ¿Cuántos?", "ir_a": "heridos"},
+					{"texto": "¿Dónde ha sido exactamente?", "ir_a": "donde"}]},
+			"heridos": {"texto_por_desenlace": {
+					"leve": "Dos personas... están de pie, pero sangran un poco por la cara.",
+					"grave": "¡Tres! Y hay un chico que no puede salir del coche, ¡está atrapado!",
+					"moto": "¡Es un motorista! Está tirado en el suelo y casi no se mueve.",
+					"humo": "Los conductores han salido... pero uno de los coches está echando humo."},
+				"efectos_por_desenlace": {
+					"leve": {"info": "Dos heridos leves", "heridos": 2},
+					"grave": {"info": "Tres heridos, uno atrapado en el coche", "requiere": {"ambulancia": 2, "bomberos": 1}, "categoria": "atrapado", "traslado": true, "urgencia": 60.0, "heridos": 3},
+					"moto": {"info": "Motorista herido en el suelo", "traslado": true},
+					"humo": {"info": "Un coche echa humo", "requiere": {"bomberos": 1}}},
+				"opciones": [
+					{"texto": "¿Están conscientes?", "ir_a": "conscientes"},
+					{"texto": "¿Dónde ha sido exactamente?", "ir_a": "donde"}]},
+			"conscientes": {"texto_por_desenlace": {
+					"moto": "Se queja mucho... y está intentando quitarse el casco.",
+					"grave": "El chico atrapado está despierto, pero dice que no siente bien las piernas.",
+					"_": "Sí, todos hablan y se mueven."},
+				"efectos_por_desenlace": {"grave": {"info": "El atrapado no siente bien las piernas"}, "moto": {"info": "El motorista está consciente"}, "_": {"info": "Todos están conscientes"}},
+				"opciones": [{"texto": "¿Dónde ha sido exactamente?", "ir_a": "donde"}]},
+			"donde": {"texto": "En Miguelturra, en la carretera, a la altura de {lugar}.", "efectos": {"precision": 2, "info": "A la altura de {lugar}"},
+				"opciones": [{"texto": "¿En qué calle exactamente?", "ir_a": "calle"}]},
+			"calle": {"texto": "En {calle}. Se está formando un atasco tremendo.", "efectos": {"precision": 3, "info": "{calle}"},
+				"opciones": [{"texto": "Ambulancia y policía van para allá.", "ir_a": "consejos"}]},
+			"consejos": {"si_desenlace": {"moto": "casco"},
+				"sorpresa": {"prob": 0.55, "ir_a": "humo_sorpresa", "desenlaces": ["humo", "grave"]},
+				"texto": "¿Y qué hago? ¿Saco a la gente de los coches?",
+				"opciones": [
+					{"texto": "No mueva a los heridos. Encienda las luces de emergencia, apártese de la carretera y avíseme si cambia algo.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "ir_a": "fin"},
+					{"texto": "Sí, sáquelos de los coches cuanto antes.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"},
+					{"texto": "Quédese mirando y avíseme si cambia algo.", "ir_a": "fin"}]},
+			"casco": {"texto": "¡Se quiere quitar el casco porque dice que se ahoga! ¿Se lo quito yo?",
+				"opciones": [
+					{"texto": "¡No! No le quite el casco ni le mueva el cuello. Háblele para que esté tranquilo.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "efectos_por_desenlace": {"moto": {"marca": "casco_bien"}, "_": {}}, "ir_a": "fin"},
+					{"texto": "Sí, quíteselo con cuidado para que respire mejor.", "efectos": {"marca": "consejo_malo"}, "efectos_por_desenlace": {"moto": {"marca": "casco_mal"}, "_": {}}, "ir_a": "fin_mal"}]},
+			"humo_sorpresa": {"texto_por_desenlace": {
+					"humo": "¡Espere! ¡Ahora sale muchísimo humo del capó! ¡Huele a gasolina!",
+					"_": "¡Uno de los coches empieza a echar humo! ¡Y el chico sigue dentro!"},
+				"efectos": {"calma": -10, "requiere": {"bomberos": 1}, "urgencia": 50.0},
+				"efectos_por_desenlace": {"humo": {"confirmado": "Humo y olor a gasolina en un coche"}, "_": {"confirmado": "Humo en el coche del atrapado"}},
+				"opciones": [
+					{"texto": "Aléjese del coche y aparte a la gente. Los bomberos van para allá.", "efectos": {"marca": "consejo_bueno"}, "ir_a": "fin"},
+					{"texto": "Intente apagarlo echándole agua.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"}]},
+			"fin": {"texto": "Vale, me aparto y espero. ¡Ya se oyen las sirenas!", "fin": true},
+			"fin_mal": {"texto": "Vale... voy a ver si puedo...", "fin": true},
+		},
+		"llamadas": {
+			"atasco": {"llamante": "Hombre, unos 45 años (conductor en el atasco)", "calma": 60, "inicio": "inicio",
+				"estados": ["En pánico", "Enfadado", "Impaciente", "Tranquilo"],
+				"nodos": {
+					"inicio": {"texto_por_desenlace": {
+							"humo": "Estoy en el atasco del accidente... ¡desde aquí se ve humo negro! La gente se acerca a mirar.",
+							"grave": "Estoy atrapado en el atasco... ¡se ve humo en uno de los coches y la gente está nerviosa!",
+							"_": "Estoy en el atasco del accidente. Llevo diez minutos parado, ¿tardarán mucho?"},
+						"efectos_por_desenlace": {"humo": {"confirmado": "Humo visible desde el atasco"}, "grave": {"info": "Se ve humo desde el atasco"}, "_": {"info": "Atasco largo en la zona"}},
+						"opciones": [{"texto": "Gracias. No se baje del coche y deje paso a las sirenas.", "ir_a": "fin"}]},
+					"fin": {"texto": "Vale, vale, me aparto.", "fin": true},
+				}},
+		},
+		"eventos": [
+			{"id": "llamada_atasco", "cuando": "tiempo", "segundos": 25.0, "llamada": "atasco"},
+			{"id": "llega_policia", "cuando": "llegada", "servicio": "policia",
+				"radio": "Cortamos el tráfico en los dos sentidos y señalizamos el accidente."},
+			{"id": "llega_ambulancia", "cuando": "llegada", "servicio": "ambulancia", "desenlaces": ["leve", "moto", "humo"],
+				"radio_por_desenlace": {
+					"leve": "Dos heridos leves con cortes. Los curamos aquí mismo.",
+					"moto": "Motorista con posible lesión de cuello. Lo inmovilizamos.",
+					"humo": "Los conductores están bien, solo un poco mareados por el susto."},
+				"efectos_por_desenlace": {
+					"leve": {"confirmado": "Dos heridos leves", "duracion": -3.0, "heridos": 2},
+					"moto": {"confirmado": "Motorista con lesión de cuello", "traslado": true},
+					"humo": {"confirmado": "Conductores ilesos", "duracion": -4.0}}},
+			{"id": "llega_ambulancia_grave", "cuando": "llegada", "servicio": "ambulancia", "desenlaces": ["grave"],
+				"radio": "Tres heridos: uno atrapado y grave, y dos leves. Con una sola ambulancia vamos justos.",
+				"efectos": {"confirmado": "Tres heridos, uno atrapado", "traslado": true, "categoria": "atrapado", "requiere": {"bomberos": 1}, "heridos": 3},
+				"decision": {"titulo": "Tres heridos y poca ayuda", "opciones": [
+					{"texto": "Pedir una segunda ambulancia", "efectos": {"requiere": {"ambulancia": 2}, "marca": "segunda"}},
+					{"texto": "Atender primero al grave; los leves esperan", "efectos": {"marca": "esperan_leves", "duracion": 6.0}}]}},
+			{"id": "llega_bomberos", "cuando": "llegada", "servicio": "bomberos", "desenlaces": ["grave", "humo"],
+				"radio_por_desenlace": {
+					"grave": "Estabilizamos el coche. Vamos a cortar el techo para sacar al herido.",
+					"humo": "Coche echando humo: lo enfriamos y desconectamos la batería."},
+				"efectos_por_desenlace": {"grave": {"categoria": "atrapado"}, "humo": {"confirmado": "Coche asegurado por los bomberos"}}},
+		],
+		"finales": [
+			{"desenlace": "grave", "exito": false, "fallecido": true, "texto": "El conductor atrapado ha fallecido antes de poder sacarlo del coche.", "exito_final": false},
+			{"desenlace": "grave", "empeorado": true, "texto": "Excarcelado tarde: el herido grave ingresa en estado crítico.", "exito_final": false},
+			{"desenlace": "grave", "marca": "segunda", "texto": "Herido excarcelado y los tres trasladados a la vez. ¡Gran coordinación!", "estrellas": 1},
+			{"desenlace": "grave", "texto": "Herido excarcelado y trasladado. Los heridos leves tuvieron que esperar."},
+			{"desenlace": "moto", "marca": "casco_mal", "texto": "Al quitarle el casco se agravó la lesión de cuello del motorista.", "estrellas": -1, "exito_final": false},
+			{"desenlace": "moto", "marca": "casco_bien", "texto": "Motorista inmovilizado a tiempo gracias a tus instrucciones. Trasladado estable.", "estrellas": 1},
+			{"desenlace": "moto", "texto": "Motorista trasladado al hospital con una lesión de cuello."},
+			{"desenlace": "humo", "empeorado": true, "texto": "El coche llegó a arder antes de que llegaran los bomberos.", "exito_final": false},
+			{"desenlace": "humo", "texto": "Coche asegurado por los bomberos. Los conductores, ilesos."},
+			{"desenlace": "leve", "texto": "Dos heridos leves curados en el lugar. Tráfico restablecido."},
+		],
+	},
+	# ================================================================
+	# 5. "MI VECINA NO DA SEÑALES" (puede acabar en fallecimiento y trámites)
+	# ================================================================
+	{
+		"id": "sin_noticias", "turno": "dia", "tipo": "llamada",
+		"referencias": ["iglesia", "plaza", "colegio", "supermercado", "farmacia", "parque"],
+		"llamantes": [
+			{"desc": "Mujer, unos 60 años (vecina)", "calma": 55, "nombres": ["Mercedes", "Amparo", "Josefa", "Concha", "Remedios"],
+				"personalidades": [["preocupada", 0], ["muy angustiada", -15], ["serena", 15]]},
+			{"desc": "Hombre, unos 65 años (vecino)", "calma": 60, "nombres": ["Eusebio", "Valentín", "Gregorio", "Tomás"],
+				"personalidades": [["preocupado", 0], ["nervioso", -10], ["tranquilo", 15]]},
+		],
+		"estados": ["En pánico", "Muy angustiado/a", "Preocupado/a", "Tranquilo/a"],
+		"desenlaces": {
+			"caida": {"peso": 3}, "fallecida": {"peso": 2}, "viaje": {"peso": 2},
+		},
+		"incidente": {"titulo": "Vecina mayor sin dar señales de vida", "servicios": ["policia"], "principal": "policia",
+			"urgencia": 95.0, "intervencion": 8.0, "categoria": "robo", "requeridas": {"policia": 1}, "traslado": false},
+		"inicio": "inicio",
+		"nodos": {
+			"inicio": {"textos": ["Hola... llamo porque mi vecina, una señora mayor que vive sola, no da señales desde hace dos días.",
+					"Perdone que les llame... no veo a mi vecina desde el lunes y tiene el buzón lleno de cartas.",
+					"Buenas. Estoy preocupada: la señora de al lado no abre la puerta, y eso que sale todos los días a por el pan."],
+				"opciones": [
+					{"texto": "¿Cuándo la vio por última vez?", "ir_a": "ultima"},
+					{"texto": "¿Ha llamado a su puerta?", "ir_a": "puerta"},
+					{"texto": "¿Dónde vive la señora?", "ir_a": "donde"}]},
+			"ultima": {"texto_por_desenlace": {
+					"viaje": "Pues el lunes... me pareció verla con una maleta, pero no estoy segura.",
+					"_": "El lunes por la mañana, comprando el pan. Desde entonces, nada."},
+				"efectos_por_desenlace": {"viaje": {"info": "Quizá la vieron con una maleta"}, "_": {"info": "No la ven desde hace dos días"}},
+				"opciones": [
+					{"texto": "¿Ha llamado a su puerta?", "ir_a": "puerta"},
+					{"texto": "¿Tiene familia?", "ir_a": "familia"},
+					{"texto": "¿Dónde vive la señora?", "ir_a": "donde"}]},
+			"puerta": {"texto_por_desenlace": {
+					"caida": "Sí, y me ha parecido oír algo dentro... como un quejido muy flojito.",
+					"fallecida": "Sí, muchas veces. No se oye nada. Y tiene la persiana bajada.",
+					"viaje": "Sí, pero no contesta nadie. La persiana está bajada."},
+				"efectos_por_desenlace": {"caida": {"info": "Se oye un quejido dentro", "urgencia": 70.0}, "_": {"info": "No contesta y tiene la persiana bajada"}},
+				"opciones": [
+					{"texto": "¿Tiene familia?", "ir_a": "familia"},
+					{"texto": "¿Dónde vive la señora?", "ir_a": "donde"}]},
+			"familia": {"texto": "Tiene una hija que vive en Ciudad Real, pero no tengo su teléfono.", "efectos": {"info": "Tiene una hija en Ciudad Real"},
+				"opciones": [{"texto": "¿Dónde vive la señora?", "ir_a": "donde"}]},
+			"donde": {"texto": "En Miguelturra, cerca de {lugar}.", "efectos": {"precision": 2, "info": "Cerca de {lugar}"},
+				"opciones": [{"texto": "¿En qué calle?", "ir_a": "calle"}]},
+			"calle": {"texto": "En {calle}, la casa de la puerta verde.", "efectos": {"precision": 3, "info": "{calle}, casa de la puerta verde"},
+				"opciones": [{"texto": "Mandamos una patrulla.", "ir_a": "consejos"}]},
+			"consejos": {"texto": "¿Intento entrar yo por la ventana del patio?",
+				"opciones": [
+					{"texto": "No, no intente entrar. Espere en la puerta para indicar a los agentes.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "ir_a": "fin"},
+					{"texto": "Si puede entrar sin peligro, entre a ver.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"}]},
+			"fin": {"texto": "Vale, les espero en la puerta. Gracias.", "fin": true},
+			"fin_mal": {"texto": "Bueno... voy a intentarlo...", "fin": true},
+		},
+		"llamadas": {},
+		"eventos": [
+			{"id": "llega_policia", "cuando": "llegada", "servicio": "policia",
+				"radio": "Estamos en la puerta. Nadie abre y el buzón está lleno.",
+				"decision": {"titulo": "Nadie abre y el buzón está lleno", "opciones": [
+					{"texto": "Pedir a los bomberos que abran la puerta", "efectos": {"requiere": {"bomberos": 1}, "marca": "puerta"}, "siguiente": "abrir"},
+					{"texto": "Preguntar a los vecinos si alguien tiene llave", "siguiente": "llave"},
+					{"texto": "Esperar a localizar a la familia", "efectos": {"marca": "esperar"}, "siguiente": "familia"}]}},
+			{"id": "abrir", "cuando": "tras",
+				"radio_por_desenlace": {
+					"caida": "Esperamos a los bomberos para abrir... ¡se oye a la señora pedir ayuda! Pedimos ambulancia.",
+					"fallecida": "Esperamos a los bomberos para abrir. Dentro no se oye nada. Pedimos ambulancia.",
+					"viaje": "Antes de que lleguen los bomberos aparece su hija: la señora está pasando unos días con ella."},
+				"efectos_por_desenlace": {
+					"caida": {"categoria": "medico", "requiere": {"ambulancia": 1}, "principal": "ambulancia", "traslado": true, "confirmado": "Señora caída dentro de casa"},
+					"fallecida": {"categoria": "medico", "requiere": {"ambulancia": 1}, "principal": "ambulancia", "confirmado": "No hay respuesta dentro"},
+					"viaje": {"categoria": "control", "quitar": "bomberos", "confirmado": "La señora está con su hija", "duracion": -3.0}}},
+			{"id": "llave", "cuando": "tras",
+				"radio_por_desenlace": {
+					"caida": "La vecina de abajo tiene llave. ¡Entramos! La señora está en el suelo del baño. Necesitamos una ambulancia.",
+					"fallecida": "Entramos con la llave de una vecina... Lo sentimos, la señora no respira. Pedimos ambulancia para certificar.",
+					"viaje": "Un vecino dice que se fue con su hija el lunes. Lo confirmamos por teléfono: está bien."},
+				"efectos_por_desenlace": {
+					"caida": {"categoria": "medico", "requiere": {"ambulancia": 1}, "principal": "ambulancia", "traslado": true, "confirmado": "Señora caída en el baño"},
+					"fallecida": {"categoria": "medico", "requiere": {"ambulancia": 1}, "principal": "ambulancia", "confirmado": "Encontrada sin vida", "duracion": -4.0},
+					"viaje": {"categoria": "control", "confirmado": "La señora está con su hija", "duracion": -3.0}}},
+			{"id": "familia", "cuando": "tras",
+				"radio_por_desenlace": {
+					"caida": "Localizar a la familia nos ha llevado mucho tiempo... Por fin entramos: la señora lleva horas en el suelo.",
+					"fallecida": "La hija llega con la llave. Lo sentimos mucho: la señora ha fallecido.",
+					"viaje": "La hija nos contesta: su madre está con ella en Ciudad Real. Todo en orden."},
+				"efectos_por_desenlace": {
+					"caida": {"categoria": "medico", "requiere": {"ambulancia": 1}, "principal": "ambulancia", "traslado": true, "marca": "espera_larga", "confirmado": "Señora caída desde hace horas"},
+					"fallecida": {"categoria": "medico", "requiere": {"ambulancia": 1}, "principal": "ambulancia", "confirmado": "Encontrada sin vida", "duracion": -4.0},
+					"viaje": {"categoria": "control", "confirmado": "La señora está con su hija", "duracion": -3.0}}},
+			{"id": "llega_bomberos", "cuando": "llegada", "servicio": "bomberos", "desenlaces": ["caida", "fallecida"],
+				"radio_por_desenlace": {
+					"caida": "Puerta abierta. La señora está consciente en el suelo, muy dolorida.",
+					"fallecida": "Puerta abierta. Lo sentimos: la señora está sin vida en la cama."},
+				"efectos_por_desenlace": {"fallecida": {"confirmado": "Encontrada sin vida", "duracion": -4.0}, "_": {}}},
+			{"id": "llega_ambulancia", "cuando": "llegada", "servicio": "ambulancia", "desenlaces": ["caida", "fallecida"],
+				"radio_por_desenlace": {
+					"caida": "Señora con posible fractura de cadera. La inmovilizamos y la trasladamos.",
+					"fallecida": "Confirmamos que lleva varias horas fallecida. Causas naturales, a falta del forense."},
+				"efectos_por_desenlace": {"caida": {"traslado": true}, "fallecida": {"traslado": false, "duracion": -3.0}}},
+		],
+		"finales": [
+			{"desenlace": "fallecida", "fallecido": true, "texto": "La señora había fallecido en su casa por causas naturales.", "exito_final": true, "estrellas": 1},
+			{"desenlace": "caida", "marca": "espera_larga", "texto": "Rescatada tras muchas horas en el suelo: ingresa en estado grave.", "estrellas": -1},
+			{"desenlace": "caida", "empeorado": true, "texto": "La señora ingresa en estado grave por la espera.", "exito_final": false},
+			{"desenlace": "caida", "texto": "Señora rescatada a tiempo y trasladada al hospital. ¡Bien hecho!", "estrellas": 1},
+			{"desenlace": "viaje", "marca": "puerta", "texto": "Falsa alarma: la señora estaba con su hija. Se pidió abrir la puerta sin necesidad.", "estrellas": -1},
+			{"desenlace": "viaje", "texto": "Falsa alarma: la señora estaba pasando unos días con su familia."},
 		],
 	},
 ]

@@ -52,6 +52,12 @@ var fuente: Font
 var capa_nombres: Node2D
 var capa_iconos: Node2D
 var bases: Array = []   # [{nombre, pos, color, letra}]
+var relieve: Node2D     # sombras y bordes iluminados de los edificios
+var calidad_alta := true:
+	set(valor):
+		calidad_alta = valor
+		if relieve != null:
+			relieve.visible = valor
 
 
 func _ready() -> void:
@@ -140,11 +146,48 @@ func _crear_vias() -> void:
 
 
 func _crear_edificios() -> void:
+	# Sombra debajo (da sensación de altura); se dibuja una sola vez
+	relieve = Node2D.new()
+	relieve.draw.connect(_dibujar_sombras)
+	relieve.visible = calidad_alta
+	add_child(relieve)
 	for e in datos["edificios"]:
 		var poly := Polygon2D.new()
 		poly.polygon = _puntos(e)
 		poly.color = Color("1b3772")
 		add_child(poly)
+	var bordes := Node2D.new()
+	bordes.draw.connect(_dibujar_bordes.bind(bordes))
+	add_child(bordes)
+
+
+func _dibujar_sombras() -> void:
+	for e in datos["edificios"]:
+		var p := _puntos(e)
+		var sombra := PackedVector2Array()
+		for q in p:
+			sombra.append(q + Vector2(6, 8))
+		if sombra.size() >= 3:
+			relieve.draw_colored_polygon(sombra, Color(0.0, 0.02, 0.08, 0.55))
+
+
+## Tejados: borde claro y un poco más de luz en el centro.
+func _dibujar_bordes(nodo: Node2D) -> void:
+	for e in datos["edificios"]:
+		var p := _puntos(e)
+		if p.size() < 3:
+			continue
+		var cerrado := p.duplicate()
+		cerrado.append(p[0])
+		nodo.draw_polyline(cerrado, Color("3e6ccc"), 1.6)
+		var centro := Vector2.ZERO
+		for q in p:
+			centro += q
+		centro /= float(p.size())
+		var tejado := PackedVector2Array()
+		for q in p:
+			tejado.append(centro + (q - centro) * 0.6)
+		nodo.draw_colored_polygon(tejado, Color(0.25, 0.4, 0.75, 0.25))
 
 
 # ------------------------------------------------------------------ DIBUJO

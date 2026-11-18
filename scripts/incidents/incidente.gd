@@ -38,6 +38,25 @@ var llamadas_relacionadas := 0
 var decision_pendiente := false
 var ajuste_estrellas := 0
 var apoyos: Array = []          # unidades de primera respuesta esperando al servicio principal
+var en_escena: Array = []       # todas las unidades que están ahora mismo en el lugar (también las de apoyo)
+var heridos := 1                # personas afectadas (accidentes con varios heridos)
+var llegadas: Dictionary = {}   # id de unidad -> momento en que llegó (para la animación de llegada)
+var fallecidos := 0             # personas fallecidas (abren los trámites)
+var tramites_paso := 0         # 0 declaración, 1 juzgado y forense, 2 funeraria
+var clima := ""                 # tiempo que hacía al crearse
+
+
+## Unidades que siguen de verdad en el lugar.
+func unidades_en_escena() -> Array:
+	var lista: Array = []
+	for v in en_escena:
+		if is_instance_valid(v) and v.incidente == self and v.estado == "En intervención":
+			lista.append(v)
+	return lista
+
+
+func hay_unidades_en_escena() -> bool:
+	return unidades_en_escena().size() > 0
 
 
 func registrar(hora: String, texto: String) -> void:
