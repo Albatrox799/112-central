@@ -36,6 +36,27 @@ func cargar(datos: Dictionary) -> void:
 				calle_nodo[b] = nombre
 
 
+var cortes: Array = []            # tramos cortados [a, b] (obras, fiestas)
+
+
+## Corta un tramo de calle: las rutas nuevas darán un rodeo.
+func cortar(a: int, b: int) -> void:
+	if astar.are_points_connected(a, b):
+		astar.disconnect_points(a, b, true)
+		cortes.append([a, b])
+
+
+func restaurar_cortes() -> void:
+	for c in cortes:
+		astar.connect_points(int(c[0]), int(c[1]), true)
+	cortes.clear()
+
+
+## Número de calles que salen de un cruce.
+func grado(id: int) -> int:
+	return vecinos.get(id, []).size()
+
+
 func _clave(a: int, b: int) -> int:
 	return mini(a, b) * 100000 + maxi(a, b)
 

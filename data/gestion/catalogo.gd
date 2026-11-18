@@ -19,6 +19,7 @@ const VEHICULOS := {
 	"autobomba": {"nombre": "Autobomba", "servicio": "bomberos", "velocidad": 45.0, "plazas": 4, "precio": 120000, "bono": ""},
 	"escalera": {"nombre": "Camión escalera", "servicio": "bomberos", "velocidad": 40.0, "plazas": 3, "precio": 150000, "bono": "altura"},
 	"rescate": {"nombre": "Unidad de rescate", "servicio": "bomberos", "velocidad": 55.0, "plazas": 3, "precio": 90000, "bono": "rescate"},
+	"pc_vehiculo": {"nombre": "Vehículo de Protección Civil", "servicio": "proteccion_civil", "velocidad": 50.0, "plazas": 4, "precio": 22000, "bono": "apoyo"},
 }
 
 const EQUIPO := {
@@ -43,4 +44,6 @@ const FLOTA_INICIAL := [
 ]
 
 ## Base por defecto de cada servicio para los vehículos nuevos
-const BASE_SERVICIO := {"ambulancia": "ambulancia1", "policia": "policia", "bomberos": "bomberos"}
+const BASE_SERVICIO := {"ambulancia": "ambulancia1", "policia": "policia", "bomberos": "bomberos", "proteccion_civil": "proteccion_civil"}
+const PRECIO_FORMACION := 1500     # curso de formación para un vehículo (máximo 2)
+const SUBVENCION_BASE := 500       # presupuesto del ayuntamiento por turno (+ según la reputación)

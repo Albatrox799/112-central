@@ -168,7 +168,69 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.8.2", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.95", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+
+
+# ---------------------------------------------------------------- PANTALLA DE CARGA
+
+var carga: Control
+var _t_carga := 0.0
+var _texto_carga := ""
+
+
+func mostrar_carga(curiosidad: String) -> void:
+	_texto_carga = curiosidad
+	_t_carga = 0.0
+	if carga == null:
+		carga = Control.new()
+		carga.size = Vector2(ANCHO, ALTO)
+		carga.mouse_filter = Control.MOUSE_FILTER_STOP
+		carga.draw.connect(_dibujar_carga)
+		raiz.add_child(carga)
+	carga.visible = true
+	carga.modulate = Color.WHITE
+
+
+func ocultar_carga() -> void:
+	if carga == null:
+		return
+	var tw := carga.create_tween()
+	tw.tween_property(carga, "modulate", Color(1, 1, 1, 0), 0.5)
+	tw.tween_callback(func(): carga.visible = false)
+
+
+func cargando() -> bool:
+	return carga != null and carga.visible
+
+
+func _dibujar_carga() -> void:
+	var f := ThemeDB.fallback_font
+	carga.draw_rect(Rect2(0, 0, ANCHO, ALTO), Color("050b1c"))
+	# Barrido de luces de sirena
+	var x := fmod(_t_carga * 500.0, ANCHO + 400.0) - 200.0
+	carga.draw_rect(Rect2(x - 160, 0, 160, ALTO), Color(1.0, 0.2, 0.2, 0.06))
+	carga.draw_rect(Rect2(x, 0, 160, ALTO), Color(0.2, 0.4, 1.0, 0.06))
+	carga.draw_string(f, Vector2(0, 230), "CENTRAL 112", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 72, Color("e8f4ff"))
+	carga.draw_string(f, Vector2(0, 280), "M I G U E L T U R R A", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 26, Color("7fb2ff"))
+	var barra := Rect2(ANCHO / 2.0 - 260, 330, 520, 10)
+	carga.draw_rect(barra, Color("13283a"))
+	carga.draw_rect(Rect2(barra.position, Vector2(barra.size.x * clampf(_t_carga / 3.2, 0.0, 1.0), barra.size.y)), Color("3ddc84"))
+	carga.draw_string(f, Vector2(0, 372), "Cargando el mapa de Miguelturra...", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 18, Color("8fa9c4"))
+	carga.draw_string(f, Vector2(0, 470), "¿SABÍAS QUE...?", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 22, Color("ffd166"))
+	# Texto partido en líneas
+	var palabras := _texto_carga.split(" ")
+	var linea := ""
+	var y := 510.0
+	for p in palabras:
+		var prueba := p if linea == "" else linea + " " + p
+		if f.get_string_size(prueba, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x > 900.0 and linea != "":
+			carga.draw_string(f, Vector2(0, y), linea, HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 22, Color("e8f4ff"))
+			y += 32.0
+			linea = p
+		else:
+			linea = prueba
+	if linea != "":
+		carga.draw_string(f, Vector2(0, y), linea, HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 22, Color("e8f4ff"))
 
 
 # ---------------------------------------------------------------- PERIÓDICO (fin de turno)
@@ -345,6 +407,9 @@ func ventana_abierta() -> bool:
 ## Moverse por la lista activa con la cruceta, siempre en orden
 ## (arriba/abajo), sin depender de la posición de los botones en pantalla.
 func _input(event: InputEvent) -> void:
+	if cargando():
+		get_viewport().set_input_as_handled()
+		return
 	if calibrando():
 		return
 	# Durante la llamada: L1/R1 cambian de pestaña y X salta el texto que se escribe
@@ -385,6 +450,9 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	# Tiempo real (la llamada va a cámara lenta, pero el texto y los relojes no)
 	var real := delta / maxf(Engine.time_scale, 0.01)
+	if cargando():
+		_t_carga += real
+		carga.queue_redraw()
 	_t_icono += real
 	if aviso_llamada.visible:
 		if not get_tree().paused:

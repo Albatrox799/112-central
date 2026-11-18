@@ -16,6 +16,7 @@ const ROPA := {
 	"policia": Color("2f5fb3"), "ambulancia": Color("e3ef5a"), "bomberos": Color("c0392b"),
 	"civil": Color("48a9a6"), "sospechoso": Color("ff6b9a"), "herido": Color("9aa5b1"),
 	"nino": Color("ffd166"), "forense": Color("ecf0f1"), "funeraria": Color("2d3436"),
+	"proteccion_civil": Color("ff8c1a"),
 }
 const PIEL := Color("f1c9a5")
 
@@ -127,6 +128,7 @@ func _draw() -> void:
 			_escena_control()
 		_:
 			_escena_medica()
+	_escena_proteccion_civil()
 	_dibujar_chispas()
 	_carteles()
 	draw_rect(ESCENA, Color("2a6f8f"), false, 1.0)
@@ -736,6 +738,22 @@ func _escena_tramites() -> void:
 		_persona(cuerpo + Vector2(60, -2), "funeraria", "multa", 0.0, -1.0)   # el secretario judicial con sus papeles
 
 
+## Voluntarios de Protección Civil: acordonan y ayudan en cualquier escena.
+func _escena_proteccion_civil() -> void:
+	var n := _gente("proteccion_civil")
+	if n == 0:
+		return
+	var puerta := Vector2.ZERO
+	for k in _puerta_serv:
+		if _puerta_serv[k] == "proteccion_civil":
+			puerta = k
+	var sitios := [Vector2(196, Y_ACERA + 2), Vector2(492, Y_ACERA + 2), Vector2(236, Y_ACERA - 2)]
+	for i in mini(n, 3):
+		var sitio: Vector2 = sitios[i]
+		var pos := _entrar(puerta, sitio, 0.2 + i * 0.3) if puerta != Vector2.ZERO else sitio
+		_persona(pos, "proteccion_civil", "andar" if _andando(puerta, sitio, 0.2 + i * 0.3) else "trafico", _t * 3.0, 1.0 if sitio.x < 300 else -1.0)
+
+
 ## Policía (u otros) de apoyo alrededor de un paciente: aseguran la zona o,
 ## si son los primeros en llegar, tranquilizan y atienden hasta que llegue la ambulancia.
 func _apoyo_alrededor(centro: Vector2, puertas: Dictionary, primera_respuesta: bool) -> void:
@@ -883,6 +901,13 @@ func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool) -> voi
 			draw_rect(Rect2(-36, -12, 72, 3), Color("f1c40f"))
 			draw_line(Vector2(-34, -37), Vector2(16, -37), Color("c8ccd4"), 3.0)
 			_luces(Vector2(22, -30), Vector2(32, -30), luces)
+		"proteccion_civil":
+			draw_rect(Rect2(-30, -30, 44, 25), Color("f4f6fa"))
+			draw_rect(Rect2(14, -24, 16, 19), Color("f4f6fa"))
+			draw_rect(Rect2(17, -21, 10, 8), Color("7fb2ff"))
+			draw_rect(Rect2(-30, -17, 60, 5), Color("ff8c1a"))
+			draw_rect(Rect2(-12, -27, 10, 8), Color("1e3a8a"))
+			_luces(Vector2(-20, -32), Vector2(6, -32), luces)
 		"funeraria":
 			draw_rect(Rect2(-34, -24, 62, 19), Color("2d3436"))
 			draw_rect(Rect2(-34, -30, 40, 7), Color("2d3436"))

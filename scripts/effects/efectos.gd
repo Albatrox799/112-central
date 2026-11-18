@@ -21,6 +21,9 @@ var calidad_alta := true:
 		_encendidas = -1   # vuelve a dibujar las farolas con la nueva calidad
 var clima := "despejado"     # despejado, lluvia, niebla, tormenta, calor
 var activo := true           # false en los menús (se queda quieto)
+var zona_evento: Dictionary = {}   # {pos, nombre}: fiesta del día (gente, confeti)
+var capa := ""                     # "", "calor" o "historial"
+var historial: Array = []          # [x, y, estrellas, titulo, dia, turno]
 
 var capa_mundo: CanvasLayer
 var capa_pantalla: CanvasLayer
@@ -135,9 +138,9 @@ func _process(delta: float) -> void:
 			vivas.append(b)
 	_burbujas = vivas
 	luces.queue_redraw()
-	if not _burbujas.is_empty() or _habia_burbujas:
+	if not _burbujas.is_empty() or _habia_burbujas or capa == "historial" or not zona_evento.is_empty():
 		burbujas.queue_redraw()
-	_habia_burbujas = not _burbujas.is_empty()
+	_habia_burbujas = not _burbujas.is_empty() or capa == "historial" or not zona_evento.is_empty()
 	if activo and not pausado:
 		_actualizar_meteo(delta)
 	if clima != "despejado" or _flash > 0.0 or _habia_meteo:
@@ -183,6 +186,19 @@ func _dibujar_luces() -> void:
 				col = Color(1.0, 0.45, 0.1)
 			var r := 80.0 if calidad_alta else 55.0
 			_luz(luces, p, r, Color(col, 0.45 * fuerza))
+	# Fiesta del día: mucha gente y luces de colores
+	if not zona_evento.is_empty():
+		var c: Vector2 = zona_evento["pos"]
+		var colores := [Color(1.0, 0.3, 0.6), Color(0.3, 0.8, 1.0), Color(1.0, 0.85, 0.2), Color(0.5, 1.0, 0.4)]
+		_luz(luces, c, 180.0 + 15.0 * sin(_t * 2.0), Color(1.0, 0.6, 0.9, 0.18))
+		for k in (10 if calidad_alta else 5):
+			var a := _t * 0.6 + k * TAU / 10.0
+			var q := c + Vector2(cos(a), sin(a * 1.3)) * (60.0 + 50.0 * sin(_t + k))
+			_luz(luces, q, 22.0, Color(colores[k % 4], 0.6))
+	# Mapa de calor: dónde ha habido más emergencias
+	if capa == "calor":
+		for h in historial:
+			_luz(luces, Vector2(float(h[0]), float(h[1])), 120.0, Color(1.0, 0.25, 0.1, 0.35))
 	for inc in incidentes:
 		if not is_instance_valid(inc) or not inc.activo():
 			continue
@@ -214,6 +230,27 @@ func burbuja(nodo: Node2D, texto: String, color: Color) -> void:
 func _dibujar_burbujas() -> void:
 	var esc := clampf(1.0 / maxf(zoom, 0.05), 0.6, 3.5)
 	var tam := 15
+	# Nombre de la fiesta del día sobre la zona
+	if not zona_evento.is_empty():
+		var nombre: String = zona_evento["nombre"]
+		var w := fuente.get_string_size(nombre, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 16.0
+		var pz: Vector2 = zona_evento["pos"]
+		burbujas.draw_set_transform(pz + Vector2(0, -120) * esc, 0.0, Vector2(esc, esc))
+		burbujas.draw_rect(Rect2(-w / 2.0, -22, w, 26), Color(0.25, 0.05, 0.25, 0.85))
+		burbujas.draw_rect(Rect2(-w / 2.0, -22, w, 26), Color("ff7ad9"), false, 2.0)
+		burbujas.draw_string(fuente, Vector2(-w / 2.0 + 8, -3), nombre, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+		burbujas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# Historial: una chincheta por emergencia, con su nota
+	if capa == "historial":
+		for h in historial:
+			var p := Vector2(float(h[0]), float(h[1]))
+			var e := int(h[2])
+			var col := Color("e74c3c").lerp(Color("2ecc71"), (e - 1) / 4.0)
+			burbujas.draw_set_transform(p, 0.0, Vector2(esc, esc))
+			burbujas.draw_circle(Vector2(0, -14), 9.0, col)
+			burbujas.draw_line(Vector2(0, -6), Vector2.ZERO, col, 2.0)
+			burbujas.draw_string(fuente, Vector2(-10, -9), str(e), HORIZONTAL_ALIGNMENT_CENTER, 20, 13, Color.WHITE)
+		burbujas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	for b in _burbujas:
 		var nodo: Node2D = b["nodo"]
 		var alfa := clampf(float(b["vida"]) / 0.5, 0.0, 1.0)

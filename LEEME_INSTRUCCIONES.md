@@ -28,6 +28,29 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de las versiones 0.9 y 0.95
+
+**Arreglos**
+- Si cierras sin querer el panel de órdenes, ya puedes volver: abre la emergencia y elige «>> DAR ÓRDENES». En la lista de emergencias pone «¡ESPERAN TUS ÓRDENES!» y cada 20 segundos te lo recuerda.
+- La vecina que tiene la llave ahora sí baja a abrir si se lo pides. Si la policía ya está esperando en la puerta, abren en ese momento.
+
+**0.9 · Vida del pueblo**
+- Pantalla de carga con curiosidades reales de Miguelturra (también en el menú de turnos).
+- Mi carrera: rangos (de «en prácticas» a «Coordinador/a del 112»), 15 logros, reputación en el pueblo y presupuesto del ayuntamiento en cada turno, historial de emergencias.
+- En el menú de pausa: capa del mapa con mapa de calor o historial (chinchetas con la nota de cada emergencia).
+- Personal con nombre, cansancio (van y trabajan más despacio si encadenan servicios; descansan en la base) y cursos de formación en la ficha de cada vehículo.
+- La comisaría de la Policía Local está ahora en la C/ Lentejuela, 7.
+- Protección Civil: el segundo día el ayuntamiento te cede un vehículo (también se compra en la tienda). Se queda hasta el final de cualquier emergencia ayudando: todo va más rápido.
+- Días especiales: Carnaval, Carnaval de Verano, Ferias de la Virgen de la Estrella, Fiestas del Cristo, Romería de San Isidro, fiesta ilegal en el Monte de San Isidro, Nochevieja y partido de fútbol. Traen avisos propios, mucha gente y calles cortadas.
+- Obras con calles cortadas (rayas naranjas): las unidades dan un rodeo.
+- Historias nuevas: fiesta ilegal en el Monte de San Isidro e incendio de una nave del polígono con evacuación.
+
+**0.95 · Sucesos e investigaciones**
+- Comisaría: los vecinos vienen a poner denuncias (salen en la lista de Triángulo). Puedes tramitarlas, tomar nota o archivarlas.
+- Coche sospechoso → robo → persecución → accidente: si nadie identifica al coche, vuelve para robar, huye y puede estrellarse.
+- Guardia Civil (2 por turno) y UME (para grandes emergencias): se piden desde el panel de la emergencia y vienen desde fuera del pueblo.
+- Investigaciones de varios turnos, con prensa: la «Operación Polígono» contra el narcotráfico (termina en una redada) y «El caso del parque».
+
 ## Novedades de la versión 0.8.2
 
 - Arreglo de fluidez: las farolas y los brillos de sirenas y fuego se dibujan con una sola imagen de luz (antes eran miles de círculos y el juego bajaba a 6 FPS).

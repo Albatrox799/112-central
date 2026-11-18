@@ -1,0 +1,243 @@
+extends RefCounted
+## VIDA DEL PUEBLO (versiones 0.9 y 0.95)
+## Curiosidades de Miguelturra, carrera del operador, fiestas y días
+## especiales, denuncias en la comisaría e investigaciones que duran varios turnos.
+##
+## Formato de un aviso (emergencia menor que aparece sola en el mapa):
+##   titulo, servicios, principal, requeridas, urgencia (s), intervencion (s),
+##   categoria (medico, pelea, robo, fuego, busqueda, atrapado, control),
+##   traslado, info [textos], heridos, fallecido,
+##   resultado_bien / resultado_mal (texto del informe)
+
+## ¿Sabías que...? (pantalla de carga y menú de turnos)
+const CURIOSIDADES := [
+	"El Carnaval de Miguelturra es Fiesta de Interés Turístico Nacional desde 2018.",
+	"El Carnaval ya fue declarado de Interés Turístico Regional en 1983 y de Interés Costumbrista y Cultural en 1984.",
+	"El documento más antiguo que habla del Carnaval de Miguelturra es de 1898: hasta entonces se transmitía de boca en boca.",
+	"Se cuenta que el nombre del pueblo viene de «Miguel Turrado» (Miguel Quemado), por las veces que fue quemado en la Edad Media.",
+	"A la gente de Miguelturra, además de miguelturreños, se les llama churriegos.",
+	"La patrona de Miguelturra es Nuestra Señora de la Estrella, y sus Ferias y Fiestas se celebran en septiembre.",
+	"La romería de San Isidro se celebra en mayo, en la colina que lleva el nombre del santo.",
+	"Miguelturra estuvo seis siglos bajo el gobierno de la Orden de Calatrava, y su escudo se inspira en sus armas.",
+	"Miguelturra y Ciudad Real están tan juntas que forman una conurbación de cerca de 100.000 habitantes.",
+	"La ermita-convento de Nuestra Señora de la Estrella se fundó a finales del siglo XVII.",
+	"Algunas fuentes identifican Miguelturra con la antigua Aquilice romana, aunque no está demostrado.",
+	"Consejo: si no tienes la unidad adecuada libre, manda otra como primera respuesta mientras llega.",
+	"Consejo: guiar bien por teléfono (RCP, no mover a los heridos...) cambia cómo termina la historia.",
+	"Consejo: una ambulancia sin material vuelve rápido a la base; mientras tanto no acepta avisos.",
+]
+
+## Rangos del operador o la operadora según los puntos (estrellas acumuladas).
+const RANGOS := [
+	[0, "Operador/a en prácticas"],
+	[40, "Operador/a"],
+	[120, "Operador/a veterano/a"],
+	[250, "Jefe/a de sala"],
+	[450, "Coordinador/a del 112"],
+]
+
+const LOGROS := {
+	"primer_turno": {"nombre": "Primer turno", "desc": "Termina tu primer turno."},
+	"cinco_estrellas": {"nombre": "Impecable", "desc": "Resuelve una emergencia con 5 estrellas."},
+	"rcp": {"nombre": "Manos que salvan", "desc": "Guía una RCP por teléfono con buen final."},
+	"rescate_altura": {"nombre": "Al rescate", "desc": "Rescata a alguien atrapado en un incendio."},
+	"sin_perdidas": {"nombre": "Siempre al teléfono", "desc": "Termina un turno sin llamadas perdidas."},
+	"tormenta": {"nombre": "Bajo la tormenta", "desc": "Termina un turno con tormenta."},
+	"fiestas": {"nombre": "De fiesta, pero trabajando", "desc": "Termina un turno en un día de fiestas."},
+	"diez_turnos": {"nombre": "Veterano/a", "desc": "Completa 10 turnos."},
+	"cien": {"nombre": "Cien emergencias", "desc": "Resuelve 100 emergencias."},
+	"flota": {"nombre": "Gran flota", "desc": "Ten 10 vehículos o más."},
+	"denuncias": {"nombre": "Atención al ciudadano", "desc": "Tramita 5 denuncias en la comisaría."},
+	"persecucion": {"nombre": "Ni un ladrón suelto", "desc": "Detén a los ladrones tras una persecución."},
+	"redada": {"nombre": "Operación Polígono", "desc": "Completa la redada contra el narcotráfico."},
+	"caso_cerrado": {"nombre": "Caso cerrado", "desc": "Resuelve el caso del parque."},
+	"jefe": {"nombre": "Jefe/a de sala", "desc": "Llega al rango de Jefe/a de sala."},
+}
+
+## Nombres para el personal de las unidades
+const NOMBRES_PERSONAL := [
+	"Ana", "Luis", "Carmen", "Javier", "Pilar", "Raúl", "Isabel", "Sergio", "Rocío", "Manuel",
+	"Elena", "Alberto", "Marta", "Óscar", "Beatriz", "Rubén", "Cristina", "Diego", "Sonia", "Iván",
+	"Nuria", "Víctor", "Lorena", "Antonio", "Patricia", "Jorge", "Inés", "Fernando", "Alicia", "Hugo",
+]
+
+## Días especiales en el pueblo. "lugar" es un sitio real del mapa (o virtual,
+## como el polígono o el monte de San Isidro). "turno": dia, noche o ambos.
+const EVENTOS := {
+	"carnaval": {"nombre": "Carnaval de Miguelturra", "turno": "ambos", "lugar": "Plaza de España",
+		"desc": "Fiesta de Interés Turístico Nacional: máscaras y desfiles por todo el centro.",
+		"noticia": "Miles de máscaras llenan las calles en el Carnaval de Miguelturra",
+		"avisos": [
+			{"titulo": "Pelea entre dos grupos de disfrazados", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 2},
+				"urgencia": 70.0, "intervencion": 10.0, "categoria": "pelea", "info": ["Dos grupos de máscaras a golpes"], "resultado_bien": "Pelea disuelta entre las máscaras. Un detenido."},
+			{"titulo": "Joven con intoxicación etílica en el desfile", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 80.0, "intervencion": 10.0, "categoria": "medico", "traslado": true, "info": ["Joven inconsciente tras beber mucho"], "resultado_bien": "Joven atendido por intoxicación etílica y trasladado."},
+			{"titulo": "Niño perdido entre la multitud del desfile", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 90.0, "intervencion": 12.0, "categoria": "busqueda", "info": ["Niño de 6 años disfrazado de pirata"], "resultado_bien": "Niño encontrado junto a una comparsa y devuelto a su familia."},
+			{"titulo": "Robo de una cartera en el desfile", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 110.0, "intervencion": 8.0, "categoria": "robo", "resultado_bien": "Carterista detenido entre el público."},
+			{"titulo": "Persona herida al caerse de una carroza", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 75.0, "intervencion": 10.0, "categoria": "medico", "traslado": true},
+		]},
+	"carnaval_verano": {"nombre": "Carnaval de Verano", "turno": "ambos", "lugar": "Plaza de la Constitución",
+		"desc": "Disfraces y comparsas en pleno verano: mucho calor y mucha gente.",
+		"noticia": "El Carnaval de Verano vuelve a llenar Miguelturra de color",
+		"avisos": [
+			{"titulo": "Golpe de calor en mitad de la comparsa", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 70.0, "intervencion": 10.0, "categoria": "medico", "traslado": true, "info": ["Mujer mareada por el calor"]},
+			{"titulo": "Pelea en la verbena", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 75.0, "intervencion": 9.0, "categoria": "pelea"},
+			{"titulo": "Una bengala prende un toldo", "servicios": ["bomberos"], "principal": "bomberos",
+				"urgencia": 60.0, "intervencion": 10.0, "categoria": "fuego", "info": ["Arde el toldo de una terraza"]},
+			{"titulo": "Niña perdida en la verbena", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 90.0, "intervencion": 12.0, "categoria": "busqueda", "resultado_bien": "Niña encontrada en la plaza con unos amigos."},
+		]},
+	"estrella": {"nombre": "Ferias y Fiestas de la Virgen de la Estrella", "turno": "ambos", "lugar": "Plaza de España",
+		"desc": "Las fiestas patronales de septiembre: feria, casetas y procesión.",
+		"noticia": "Miguelturra celebra sus Ferias y Fiestas en honor a la Virgen de la Estrella",
+		"avisos": [
+			{"titulo": "Herido en una atracción de la feria", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 70.0, "intervencion": 10.0, "categoria": "medico", "traslado": true, "info": ["Un joven se ha golpeado en una atracción"]},
+			{"titulo": "Pelea en las casetas de la feria", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 2},
+				"urgencia": 70.0, "intervencion": 10.0, "categoria": "pelea"},
+			{"titulo": "Persona mayor desmayada en la procesión", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 75.0, "intervencion": 9.0, "categoria": "medico", "traslado": true},
+			{"titulo": "Coche bloqueando la salida de emergencia de la feria", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 120.0, "intervencion": 7.0, "categoria": "control", "resultado_bien": "Coche retirado por la grúa y conductor multado."},
+			{"titulo": "Conductor bebido saliendo de la feria", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 90.0, "intervencion": 8.0, "categoria": "control"},
+		]},
+	"cristo": {"nombre": "Fiestas del Santísimo Cristo de la Misericordia", "turno": "ambos", "lugar": "Ermita del Cristo",
+		"desc": "Procesión y fiesta alrededor de la Ermita del Cristo.",
+		"noticia": "Multitudinaria procesión del Cristo de la Misericordia",
+		"avisos": [
+			{"titulo": "Desmayo durante la procesión", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 75.0, "intervencion": 9.0, "categoria": "medico", "traslado": true},
+			{"titulo": "Un cohete prende un árbol junto a la ermita", "servicios": ["bomberos"], "principal": "bomberos",
+				"urgencia": 60.0, "intervencion": 10.0, "categoria": "fuego"},
+			{"titulo": "Niño perdido en la procesión", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 90.0, "intervencion": 12.0, "categoria": "busqueda"},
+			{"titulo": "Discusión que acaba a empujones en la plaza", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 80.0, "intervencion": 8.0, "categoria": "pelea"},
+		]},
+	"san_isidro": {"nombre": "Romería de San Isidro", "turno": "dia", "lugar": "el Monte de San Isidro",
+		"desc": "Todo el pueblo sube al monte de San Isidro a comer y pasar el día.",
+		"noticia": "Día de convivencia en la romería de San Isidro",
+		"avisos": [
+			{"titulo": "Caída de un romero en el monte", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 80.0, "intervencion": 10.0, "categoria": "medico", "traslado": true, "info": ["Hombre con el tobillo torcido en una cuesta"]},
+			{"titulo": "Reacción alérgica por una picadura", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 60.0, "intervencion": 8.0, "categoria": "medico", "info": ["Se le hincha la cara tras una picadura de avispa"]},
+			{"titulo": "Una barbacoa prende el pasto del monte", "servicios": ["bomberos"], "principal": "bomberos", "requeridas": {"bomberos": 1},
+				"urgencia": 55.0, "intervencion": 12.0, "categoria": "fuego", "info": ["Fuego de pasto que avanza con el viento"]},
+			{"titulo": "Atasco y golpe leve al volver de la romería", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 110.0, "intervencion": 7.0, "categoria": "control"},
+			{"titulo": "Niño perdido en la romería", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 90.0, "intervencion": 14.0, "categoria": "busqueda", "resultado_bien": "Niño encontrado jugando entre los pinos."},
+		]},
+	"rave": {"nombre": "Fiesta ilegal en el Monte de San Isidro", "turno": "noche", "lugar": "el Monte de San Isidro",
+		"desc": "Aviso de la Guardia Civil: se prepara una fiesta ilegal en el monte. Ojo con el ruido, las peleas y las intoxicaciones.",
+		"noticia": "Desalojada una fiesta ilegal en el Monte de San Isidro",
+		"historia": "rave",
+		"avisos": [
+			{"titulo": "Vecinos de La Lobera se quejan de música altísima", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 140.0, "intervencion": 8.0, "categoria": "control", "resultado_bien": "Equipo de música requisado y fiesta desalojada."},
+			{"titulo": "Joven intoxicado en la fiesta ilegal", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 65.0, "intervencion": 10.0, "categoria": "medico", "traslado": true},
+			{"titulo": "Pelea en la fiesta ilegal del monte", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 2},
+				"urgencia": 70.0, "intervencion": 10.0, "categoria": "pelea"},
+		]},
+	"nochevieja": {"nombre": "Nochevieja", "turno": "noche", "lugar": "Plaza de España",
+		"desc": "Campanadas, petardos y fiesta hasta la madrugada.",
+		"noticia": "Miguelturra despide el año con una noche movida para los servicios de emergencia",
+		"avisos": [
+			{"titulo": "Un petardo hiere a un joven en la mano", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 70.0, "intervencion": 9.0, "categoria": "medico", "traslado": true},
+			{"titulo": "Pelea a la salida de un bar", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 2},
+				"urgencia": 70.0, "intervencion": 10.0, "categoria": "pelea"},
+			{"titulo": "Contenedor ardiendo por un petardo", "servicios": ["bomberos"], "principal": "bomberos",
+				"urgencia": 70.0, "intervencion": 8.0, "categoria": "fuego"},
+			{"titulo": "Intoxicación etílica en la plaza", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 80.0, "intervencion": 9.0, "categoria": "medico", "traslado": true},
+			{"titulo": "Conductor bebido haciendo eses", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 90.0, "intervencion": 8.0, "categoria": "control"},
+		]},
+	"partido": {"nombre": "Partido de fútbol en el Complejo Candelario León Rivas", "turno": "ambos", "lugar": "Complejo Candelario León Rivas",
+		"desc": "Partido con mucho ambiente: aparcamientos llenos y aficiones calientes.",
+		"noticia": "Gran ambiente en el partido del Complejo Candelario León Rivas",
+		"avisos": [
+			{"titulo": "Pelea entre aficionados", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 2},
+				"urgencia": 70.0, "intervencion": 10.0, "categoria": "pelea"},
+			{"titulo": "Jugador lesionado en el campo", "servicios": ["ambulancia"], "principal": "ambulancia",
+				"urgencia": 85.0, "intervencion": 9.0, "categoria": "medico", "traslado": true},
+			{"titulo": "Coches mal aparcados cortan la calle", "servicios": ["policia"], "principal": "policia",
+				"urgencia": 130.0, "intervencion": 7.0, "categoria": "control", "resultado_bien": "Calle despejada y varios coches multados."},
+		]},
+}
+
+## Denuncias que llegan a la comisaría (C/ Lentejuela, 7).
+## tipo: normal, sospechoso (puede acabar en robo), o una pista de una investigación.
+const DENUNCIAS := [
+	{"tipo": "normal", "quien": "Mujer, unos 40 años", "texto": "Me han robado la bicicleta que dejé atada en la puerta del Mercadona."},
+	{"tipo": "normal", "quien": "Hombre, unos 70 años", "texto": "Me llamaron diciendo que eran del banco y les di mis claves... me han sacado dinero de la cuenta."},
+	{"tipo": "normal", "quien": "Mujer, unos 35 años", "texto": "El vecino de arriba pone la música altísima todas las noches y no deja dormir a mis hijos."},
+	{"tipo": "normal", "quien": "Hombre, unos 50 años", "texto": "Alguien me ha rayado el coche entero esta noche en la calle."},
+	{"tipo": "normal", "quien": "Mujer, unos 60 años", "texto": "Han roto la persiana de mi tienda e intentaron entrar, aunque no se llevaron nada."},
+	{"tipo": "sospechoso", "quien": "Hombre, unos 45 años", "texto": "Hay un coche con dos hombres que lleva toda la tarde dando vueltas por mi calle, mirando las casas y los comercios."},
+]
+
+## Investigaciones que duran varios turnos. Cada etapa es un aviso, una denuncia
+## en la comisaría o una gran operación final. Avanzan cuando sale bien.
+##   lugar: "industrial" (polígono), tipo de lugar del mapa (parque...) o nombre exacto
+const ARCOS := {
+	"poligono": {"nombre": "Operación Polígono", "dia_min": 3,
+		"etapas": [
+			{"tipo": "aviso", "turno": "noche", "lugar": "industrial",
+				"def": {"titulo": "Furgonetas entrando de madrugada en una nave", "servicios": ["policia"], "principal": "policia",
+					"urgencia": 180.0, "intervencion": 10.0, "categoria": "control", "info": ["Un vigilante ve furgonetas sin luces en el polígono"],
+					"resultado_bien": "Matrículas anotadas: pista para la investigación."},
+				"avance": "Operación Polígono: los agentes han anotado las matrículas de las furgonetas (pista 1 de 3)."},
+			{"tipo": "denuncia", "turno": "dia", "quien": "Hombre, unos 35 años (trabaja en el polígono)",
+				"texto": "En una nave del polígono entran y salen coches caros a todas horas, pero nunca hay nadie trabajando. Me da muy mala espina.",
+				"avance": "Operación Polígono: la denuncia de un trabajador apunta a una nave concreta (pista 2 de 3)."},
+			{"tipo": "aviso", "turno": "noche", "lugar": "industrial",
+				"def": {"titulo": "Control: coche que sale del polígono a toda velocidad", "servicios": ["policia"], "principal": "policia",
+					"urgencia": 120.0, "intervencion": 10.0, "categoria": "control",
+					"resultado_bien": "En el control aparece droga escondida en el maletero. El conductor trabajaba en la nave."},
+				"avance": "Operación Polígono: ¡droga en el coche! Pista 3 de 3. El juzgado autoriza la redada para otro turno de noche."},
+			{"tipo": "gran", "turno": "noche", "lugar": "industrial", "final": true,
+				"def": {"titulo": "OPERACIÓN POLÍGONO: redada en la nave", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 3},
+					"urgencia": 420.0, "intervencion": 25.0, "categoria": "robo",
+					"info": ["Orden judicial de entrada y registro", "Recomendado: pedir apoyo a la Guardia Civil"],
+					"resultado_bien": "Redada con éxito: cuatro detenidos y droga incautada en la nave.",
+					"resultado_mal": "Los sospechosos han huido antes de que entraran los agentes."},
+				"titular": "Golpe al narcotráfico en el polígono de Miguelturra", "recompensa": 6000, "reputacion": 10, "logro": "redada"},
+		]},
+	"caso": {"nombre": "El caso del parque", "dia_min": 4,
+		"etapas": [
+			{"tipo": "aviso", "turno": "dia", "lugar": "parque", "siempre_avanza": true,
+				"def": {"titulo": "Hallado un hombre sin vida en un parque", "servicios": ["ambulancia", "policia"], "principal": "ambulancia",
+					"requeridas": {"ambulancia": 1, "policia": 1}, "urgencia": 200.0, "intervencion": 6.0, "categoria": "medico", "fallecido": true,
+					"info": ["Un paseante ha encontrado a un hombre en el suelo, entre los setos"],
+					"resultado_bien": "El forense ve indicios de una muerte violenta. La policía abre una investigación."},
+				"avance": "El caso del parque: la policía investiga la muerte del hombre del parque.",
+				"titular": "Aparece un hombre sin vida en un parque de Miguelturra"},
+			{"tipo": "aviso", "turno": "noche", "lugar": "parque", "siempre_avanza": true,
+				"def": {"titulo": "Hallada una mujer sin vida en otro parque", "servicios": ["ambulancia", "policia"], "principal": "ambulancia",
+					"requeridas": {"ambulancia": 1, "policia": 1}, "urgencia": 200.0, "intervencion": 6.0, "categoria": "medico", "fallecido": true,
+					"info": ["Mismas circunstancias que en el caso anterior"],
+					"resultado_bien": "Todo apunta al mismo autor. La prensa empieza a hablar de un asesino en serie."},
+				"avance": "El caso del parque: segunda víctima. Los vecinos tienen miedo y la prensa no para.",
+				"titular": "¿Un asesino en serie en Miguelturra? La policía no descarta nada"},
+			{"tipo": "denuncia", "turno": "dia", "quien": "Mujer, unos 55 años (vecina del parque)",
+				"texto": "La noche de la segunda muerte vi a un hombre con un abrigo largo subirse a un coche rojo junto al parque. Iba con mucha prisa.",
+				"avance": "El caso del parque: ya hay un sospechoso, un hombre con un coche rojo. Atentos en el próximo turno de noche."},
+			{"tipo": "aviso", "turno": "noche", "lugar": "parque", "final": true,
+				"def": {"titulo": "Visto el coche rojo del sospechoso del caso del parque", "servicios": ["policia"], "principal": "policia",
+					"requeridas": {"policia": 2}, "urgencia": 100.0, "intervencion": 15.0, "categoria": "pelea",
+					"info": ["El sospechoso puede ser peligroso", "Recomendado: dos patrullas o la Guardia Civil"],
+					"resultado_bien": "Detenido el sospechoso del caso del parque.",
+					"resultado_mal": "El sospechoso ha escapado. La búsqueda continúa."},
+				"titular": "Detenido el presunto autor de las muertes de los parques", "recompensa": 5000, "reputacion": 12, "logro": "caso_cerrado"},
+		]},
+}

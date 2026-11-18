@@ -243,12 +243,17 @@ const HISTORIAS := [
 						"opciones": [
 							{"texto": "Gracias. ¿Sabe algo más?", "ir_a": "mas"},
 							{"texto": "Gracias, la policía ya va para allá.", "ir_a": "fin"}]},
-					"mas": {"texto_por_desenlace": {
-							"caida": "Tengo una llave de su casa... ¡pero me da miedo subir sola!",
+					"mas": {"si_desenlace": {"caida": "llave"},
+						"texto_por_desenlace": {
 							"pelea": "Uno llevaba una capucha... no les vi la cara.",
 							"_": "No, nada más, perdone."},
-						"efectos_por_desenlace": {"caida": {"info": "La vecina tiene una llave"}, "_": {}},
 						"opciones": [{"texto": "No suba. Los agentes se encargan.", "ir_a": "fin"}]},
+					"llave": {"texto": "Tengo una llave de su casa... ¡pero me da miedo subir sola!",
+						"efectos": {"info": "La vecina de abajo tiene una llave"},
+						"opciones": [
+							{"texto": "No suba sola. Baje al portal y dele la llave a los agentes en cuanto lleguen.", "efectos": {"marca": "llave_vecina", "calma": 10, "confirmado": "La vecina baja la llave a los agentes"}, "ir_a": "fin_llave"},
+							{"texto": "No haga nada. Los agentes se encargan.", "ir_a": "fin"}]},
+					"fin_llave": {"texto": "Vale, ahora mismo bajo al portal con la llave.", "fin": true},
 					"fin": {"texto": "De acuerdo, gracias.", "fin": true},
 				}},
 		},
@@ -258,7 +263,12 @@ const HISTORIAS := [
 				"radio_por_desenlace": {"fiesta": "Es una fiesta con la música altísima. Les pedimos que la bajen.",
 					"tele": "Un señor mayor con la tele a todo volumen. Todo en orden."},
 				"efectos": {"categoria": "control", "duracion": -3.0}},
-			{"id": "llega_policia", "cuando": "llegada", "servicio": "policia", "desenlaces": ["discusion", "pelea", "caida"],
+			{"id": "llega_con_llave", "cuando": "llegada", "servicio": "policia", "desenlaces": ["caida"], "si_marca": "llave_vecina",
+				"radio": "La vecina de abajo nos espera en el portal con la llave. ¡Abrimos!", "siguiente": "vecinos"},
+			{"id": "llave_esperando", "cuando": "marca", "desenlaces": ["caida"], "si_marca": "llave_vecina",
+				"solo_si_decision": true, "resuelve_decision": true, "excluye": ["llega_con_llave"],
+				"radio": "La vecina acaba de bajar con la llave. ¡Abrimos la puerta!", "siguiente": "vecinos"},
+			{"id": "llega_policia", "cuando": "llegada", "servicio": "policia", "desenlaces": ["discusion", "pelea", "caida"], "sin_marca": "llave_vecina",
 				"radio": "Estamos en la puerta. Nadie abre, pero se oye algo dentro.",
 				"decision": {"titulo": "Nadie abre la puerta", "opciones": [
 					{"texto": "Esperar y seguir llamando", "siguiente": "esperar"},
@@ -648,6 +658,184 @@ const HISTORIAS := [
 			{"desenlace": "caida", "texto": "Señora rescatada a tiempo y trasladada al hospital. ¡Bien hecho!", "estrellas": 1},
 			{"desenlace": "viaje", "marca": "puerta", "texto": "Falsa alarma: la señora estaba con su hija. Se pidió abrir la puerta sin necesidad.", "estrellas": -1},
 			{"desenlace": "viaje", "texto": "Falsa alarma: la señora estaba pasando unos días con su familia."},
+		],
+	},
+	# ================================================================
+	# 6. "FIESTA ILEGAL EN EL MONTE DE SAN ISIDRO" (solo en la noche de la fiesta ilegal)
+	# ================================================================
+	{
+		"id": "rave", "turno": "noche", "tipo": "llamada", "solo_evento": "rave",
+		"referencias": ["monte"],
+		"llamantes": [
+			{"desc": "Voz joven, con mucho ruido de fondo", "calma": 35, "nombres": ["Dani", "Sara", "Álex", "Irene", "Marcos"],
+				"personalidades": [["asustado/a", -10], ["muy nervioso/a", -20], ["espabilado/a", 10]]},
+			{"desc": "Hombre, unos 55 años (vecino de La Lobera)", "calma": 50, "nombres": ["Julián", "Andrés", "Felipe"],
+				"personalidades": [["harto", 0], ["muy enfadado", -15], ["tranquilo", 10]]},
+		],
+		"estados": ["En pánico", "Muy nervioso/a", "Inquieto/a", "Tranquilo/a"],
+		"desenlaces": {"ruido": {"peso": 3}, "intoxicado": {"peso": 2}, "pelea": {"peso": 2}, "hoguera": {"peso": 1}},
+		"incidente": {"titulo": "Fiesta ilegal en el Monte de San Isidro", "servicios": ["policia"], "principal": "policia",
+			"urgencia": 120.0, "intervencion": 12.0, "categoria": "control", "requeridas": {"policia": 2}, "traslado": false},
+		"inicio": "inicio",
+		"nodos": {
+			"inicio": {"texto_por_desenlace": {
+					"ruido": "Llamo desde La Lobera... ¡hay una fiesta en el monte con una música que retumba en todo el barrio!",
+					"intoxicado": "Estoy en la fiesta del monte de San Isidro... mi amigo se ha caído al suelo y no reacciona bien.",
+					"pelea": "¡En la fiesta del monte se están pegando! ¡Son muchísimos!",
+					"hoguera": "¡En la fiesta del monte han hecho una hoguera enorme y se está prendiendo el pasto!"},
+				"opciones": [
+					{"texto": "¿Qué está pasando exactamente?", "ir_a": "que"},
+					{"texto": "¿Dónde está?", "ir_a": "donde"}]},
+			"que": {"texto_por_desenlace": {
+					"ruido": "Hay cientos de coches y unos altavoces enormes. Nadie puede dormir.",
+					"intoxicado": "Ha tomado algo que le dieron... está muy pálido y respira raro.",
+					"pelea": "Son muchos, y hay uno sangrando en el suelo.",
+					"hoguera": "El fuego avanza hacia los pinos y la gente sigue bailando."},
+				"efectos_por_desenlace": {
+					"ruido": {"info": "Cientos de personas y música a todo volumen"},
+					"intoxicado": {"info": "Joven intoxicado que respira con dificultad", "requiere": {"ambulancia": 1}, "principal": "ambulancia", "categoria": "medico", "traslado": true, "urgencia": 60.0},
+					"pelea": {"info": "Pelea con un herido sangrando", "requiere": {"ambulancia": 1}, "categoria": "pelea"},
+					"hoguera": {"info": "Hoguera que prende el pasto del monte", "requiere": {"bomberos": 1}, "categoria": "fuego"}},
+				"opciones": [{"texto": "¿Dónde está exactamente?", "ir_a": "donde"}]},
+			"donde": {"texto": "En el monte de San Isidro, subiendo por La Lobera.", "efectos": {"precision": 2, "info": "Monte de San Isidro"},
+				"opciones": [{"texto": "¿Por qué calle se llega?", "ir_a": "calle"}]},
+			"calle": {"texto": "Al final de {calle}, donde están todos los coches aparcados.", "efectos": {"precision": 3, "info": "Al final de {calle}"},
+				"opciones": [{"texto": "Los agentes van para allá.", "ir_a": "consejos"}]},
+			"consejos": {"si_desenlace": {"intoxicado": "consejo_intox", "hoguera": "consejo_fuego"},
+				"texto": "¿Y qué hago mientras tanto?",
+				"opciones": [
+					{"texto": "Aléjese de la zona y no se enfrente a nadie.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "ir_a": "fin"},
+					{"texto": "Intente usted calmarlos.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"}]},
+			"consejo_intox": {"texto": "¿Qué hago con él? ¡No sé qué hacer!",
+				"opciones": [
+					{"texto": "Póngalo de lado, no le deje solo y no le dé nada de beber. Si deja de respirar, avíseme.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "efectos_por_desenlace": {"intoxicado": {"marca": "lateral"}, "_": {}}, "ir_a": "fin"},
+					{"texto": "Échele agua fría en la cara para que espabile.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"}]},
+			"consejo_fuego": {"texto": "¿Intentamos apagarlo entre todos?",
+				"opciones": [
+					{"texto": "No. Que todo el mundo se aleje del fuego, en dirección contraria al viento.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "ir_a": "fin"},
+					{"texto": "Sí, échenle tierra entre todos.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"}]},
+			"fin": {"texto": "Vale, vale... ¡que vengan rápido!", "fin": true},
+			"fin_mal": {"texto": "Vale... a ver qué puedo hacer...", "fin": true},
+		},
+		"llamadas": {},
+		"eventos": [
+			{"id": "llega_policia", "cuando": "llegada", "servicio": "policia",
+				"radio_por_desenlace": {
+					"ruido": "Hay más de doscientas personas. Cortamos la música.",
+					"intoxicado": "Mucha gente y un joven en el suelo. Abrimos paso a la ambulancia.",
+					"pelea": "Varios grupos peleando. La cosa está caliente.",
+					"hoguera": "La hoguera ha prendido el pasto. Apartamos a la gente."},
+				"decision": {"titulo": "Fiesta ilegal con cientos de personas", "opciones": [
+					{"texto": "Desalojar a todo el mundo ya", "efectos": {"marca": "desalojo", "duracion": -3.0}},
+					{"texto": "Cortar la música y desalojar poco a poco", "efectos": {"marca": "poco_a_poco", "duracion": 5.0}}]}},
+			{"id": "llega_ambulancia", "cuando": "llegada", "servicio": "ambulancia", "desenlaces": ["intoxicado", "pelea"],
+				"radio_por_desenlace": {"intoxicado": "Joven con una intoxicación grave. Lo estabilizamos y nos lo llevamos.",
+					"pelea": "Un herido con un corte en la cabeza. Lo curamos aquí."},
+				"efectos_por_desenlace": {"intoxicado": {"traslado": true}, "pelea": {"duracion": -2.0}}},
+		],
+		"finales": [
+			{"desenlace": "intoxicado", "empeorado": true, "texto": "El joven ingresa en estado grave por la intoxicación.", "exito_final": false},
+			{"desenlace": "intoxicado", "marca": "lateral", "texto": "Gracias a la postura lateral de seguridad, el joven llega estable al hospital.", "estrellas": 1},
+			{"desenlace": "intoxicado", "texto": "Joven trasladado al hospital por una intoxicación."},
+			{"desenlace": "pelea", "marca": "desalojo", "texto": "El desalojo rápido provocó carreras: dos heridos leves más.", "estrellas": -1},
+			{"desenlace": "pelea", "texto": "Pelea controlada: dos detenidos y un herido atendido."},
+			{"desenlace": "hoguera", "empeorado": true, "texto": "El fuego quemó parte del pinar antes de poder apagarlo.", "exito_final": false},
+			{"desenlace": "hoguera", "texto": "Fuego de pasto apagado y fiesta desalojada."},
+			{"desenlace": "ruido", "marca": "poco_a_poco", "texto": "Música cortada y desalojo tranquilo. Los vecinos de La Lobera por fin duermen.", "estrellas": 1},
+			{"desenlace": "ruido", "texto": "Fiesta ilegal desalojada. Algún momento de tensión, pero sin heridos."},
+		],
+	},
+	# ================================================================
+	# 7. "INCENDIO EN UNA NAVE DEL POLÍGONO" (con evacuación)
+	# ================================================================
+	{
+		"id": "nave_poligono", "turno": "ambos", "tipo": "incendio",
+		"referencias": ["industrial"],
+		"llamantes": [
+			{"desc": "Hombre, unos 40 años (trabaja en el polígono)", "calma": 35, "nombres": ["Rafael", "Emilio", "Joaquín", "Nacho"],
+				"personalidades": [["muy nervioso", -15], ["alterado", -10], ["sereno", 15]]},
+			{"desc": "Mujer, unos 30 años (trabaja en una nave vecina)", "calma": 35, "nombres": ["Raquel", "Gema", "Susana", "Vanesa"],
+				"personalidades": [["muy nerviosa", -15], ["asustada", -10], ["serena", 15]]},
+		],
+		"estados": ["En pánico", "Muy alterado/a", "Nervioso/a", "Tranquilo/a"],
+		"desenlaces": {"vacia": {"peso": 2}, "trabajadores": {"peso": 3}, "quimicos": {"peso": 2}},
+		"incidente": {"titulo": "Incendio en una nave del polígono", "servicios": ["bomberos", "policia"], "principal": "bomberos",
+			"urgencia": 60.0, "intervencion": 22.0, "categoria": "fuego", "requeridas": {"bomberos": 1, "policia": 1}, "traslado": false},
+		"inicio": "inicio",
+		"nodos": {
+			"inicio": {"textos": ["¡Fuego! ¡Está ardiendo una nave del polígono, sale un humo negrísimo!",
+					"Llamo desde el polígono industrial: ¡la nave de al lado está en llamas!",
+					"¡Corran! ¡Se está quemando una nave entera en el polígono!"],
+				"opciones": [
+					{"texto": "¿Hay alguien dentro?", "ir_a": "dentro"},
+					{"texto": "¿Qué hay en la nave?", "ir_a": "material"},
+					{"texto": "¿Dónde está la nave?", "ir_a": "donde"}]},
+			"dentro": {"texto_por_desenlace": {
+					"vacia": "Creo que no, hoy no trabajaban... está cerrada.",
+					"trabajadores": "¡Sí! Estaban trabajando... han salido algunos, pero faltan dos.",
+					"quimicos": "Han salido todos, pero dicen que dentro hay bidones de productos químicos."},
+				"efectos_por_desenlace": {
+					"vacia": {"info": "La nave parece vacía"},
+					"trabajadores": {"info": "Faltan dos trabajadores dentro", "requiere": {"ambulancia": 1}, "heridos": 2, "urgencia": 45.0},
+					"quimicos": {"info": "Bidones de productos químicos dentro", "requiere": {"bomberos": 2}}},
+				"opciones": [
+					{"texto": "¿Qué hay en la nave?", "ir_a": "material"},
+					{"texto": "¿Dónde está la nave?", "ir_a": "donde"}]},
+			"material": {"texto_por_desenlace": {
+					"vacia": "Es un almacén de muebles, hay mucha madera.",
+					"trabajadores": "Es un taller con maquinaria y aceites.",
+					"quimicos": "¡Productos de limpieza industrial y disolventes!"},
+				"efectos_por_desenlace": {"quimicos": {"confirmado": "Productos químicos en la nave", "intensidad": 3}, "_": {"intensidad": 2}},
+				"opciones": [{"texto": "¿Dónde está la nave?", "ir_a": "donde"}]},
+			"donde": {"texto": "En el polígono industrial, junto a {calle}.", "efectos": {"precision": 3, "info": "{calle}, polígono industrial"},
+				"opciones": [{"texto": "Bomberos y policía van para allá.", "ir_a": "consejos"}]},
+			"consejos": {"si_desenlace": {"quimicos": "consejo_humo"},
+				"texto": "¿Qué hacemos los que estamos aquí?",
+				"opciones": [
+					{"texto": "Aléjense de la nave, no entren a buscar a nadie y esperen a los bomberos en la entrada del polígono.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "ir_a": "fin"},
+					{"texto": "Intenten sacar a los que faltan.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"}]},
+			"consejo_humo": {"texto": "El humo huele fatal y va hacia las otras naves... ¿qué hacemos?",
+				"opciones": [
+					{"texto": "Que salga todo el mundo de las naves cercanas, en dirección contraria al humo.", "efectos": {"marca": "consejo_bueno", "calma": 10}, "ir_a": "fin"},
+					{"texto": "Cierren puertas y ventanas y quédense dentro.", "efectos": {"marca": "consejo_malo"}, "ir_a": "fin_mal"}]},
+			"fin": {"texto": "Vale, vale. ¡Que vengan rápido!", "fin": true},
+			"fin_mal": {"texto": "Vale... lo intentamos...", "fin": true},
+		},
+		"llamadas": {
+			"vecino": {"llamante": "Hombre, unos 50 años (nave de al lado)", "calma": 40, "inicio": "inicio",
+				"estados": ["En pánico", "Muy nervioso", "Nervioso", "Tranquilo"],
+				"nodos": {
+					"inicio": {"texto_por_desenlace": {
+							"quimicos": "Trabajo en la nave de al lado... ¡el humo entra por las ventanas y pica muchísimo en la garganta!",
+							"_": "Estoy en la nave de al lado. ¡Las llamas se ven desde aquí! ¿Salimos?"},
+						"efectos_por_desenlace": {"quimicos": {"confirmado": "El humo llega a las naves vecinas"}, "_": {"info": "Hay gente en las naves de al lado"}},
+						"opciones": [
+							{"texto": "Sí, salgan todos ya, en dirección contraria al humo.", "efectos": {"marca": "consejo_bueno"}, "ir_a": "fin"},
+							{"texto": "Quédense dentro hasta que llegue alguien.", "ir_a": "fin"}]},
+					"fin": {"texto": "¡Vale, salimos!", "fin": true},
+				}},
+		},
+		"eventos": [
+			{"id": "llamada_vecino", "cuando": "tiempo", "segundos": 30.0, "llamada": "vecino"},
+			{"id": "llega_bomberos", "cuando": "llegada", "servicio": "bomberos", "desenlaces": ["vacia", "trabajadores"],
+				"radio_por_desenlace": {
+					"vacia": "Nave en llamas, sin personas dentro. Atacamos el fuego.",
+					"trabajadores": "¡Dos trabajadores atrapados al fondo de la nave! Entramos con equipos de respiración."},
+				"efectos_por_desenlace": {"trabajadores": {"marca": "atrapado_bien", "confirmado": "Dos trabajadores atrapados"}, "_": {}}},
+			{"id": "llega_bomberos_quimicos", "cuando": "llegada", "servicio": "bomberos", "desenlaces": ["quimicos"],
+				"radio": "Columna de humo tóxico hacia las naves vecinas. ¿Evacuamos el polígono?",
+				"efectos": {"confirmado": "Humo tóxico hacia las naves vecinas", "intensidad": 3},
+				"decision": {"titulo": "Humo tóxico en el polígono", "opciones": [
+					{"texto": "Evacuar todas las naves cercanas (hacen falta más agentes)", "efectos": {"requiere": {"policia": 2}, "marca": "evacuacion", "duracion": 4.0}},
+					{"texto": "Solo confinar: que cierren puertas y ventanas", "efectos": {"marca": "confinar"}}]}},
+		],
+		"finales": [
+			{"desenlace": "quimicos", "marca": "evacuacion", "texto": "Incendio controlado y polígono evacuado a tiempo: nadie respiró el humo tóxico.", "estrellas": 1},
+			{"desenlace": "quimicos", "texto": "Incendio apagado, pero varios trabajadores de naves vecinas respiraron humo tóxico.", "estrellas": -1},
+			{"desenlace": "trabajadores", "empeorado": true, "texto": "Los trabajadores salieron tarde: uno de ellos está grave.", "exito_final": false},
+			{"desenlace": "trabajadores", "texto": "Los dos trabajadores rescatados con vida y trasladados al hospital.", "estrellas": 1},
+			{"desenlace": "vacia", "empeorado": true, "texto": "La nave ha quedado completamente destruida."},
+			{"desenlace": "vacia", "texto": "Incendio controlado. Solo daños materiales."},
 		],
 	},
 ]

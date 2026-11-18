@@ -14,6 +14,7 @@ signal interceptado(patrulla, objetivo)
 const RedViaria = preload("res://scripts/routing/red_viaria.gd")
 
 const NOMBRES_SERVICIO := {
+	"proteccion_civil": "Protección Civil",
 	"ambulancia": "Ambulancia (soporte vital)",
 	"policia": "Policía Local",
 	"bomberos": "Bomberos (autobomba)",
@@ -34,7 +35,11 @@ var equipo: Array = []       # equipo comprado para este vehículo
 var bono := ""
 var indice_flota := -1
 var servicios_seguidos := 0  # servicios hechos sin pasar por la base
-const LIMITE_SEGUIDOS := {"ambulancia": 3, "bomberos": 3, "policia": 99}
+const LIMITE_SEGUIDOS := {"ambulancia": 3, "bomberos": 3, "policia": 99, "proteccion_civil": 99}
+var cansancio := 0.0          # 0-100: sube con cada servicio y baja descansando en la base
+var formacion := 0            # cursos de formación (0-2): trabajan más rápido
+var externo := false          # Guardia Civil o UME: vienen de fuera y se van al terminar
+var tripulacion: Array = []   # nombres del personal
 var estado := "Disponible"   # Disponible, Patrullando, En desplazamiento, Buscando el lugar, En intervención, Traslado al hospital, Regresando, Persecución
 var fase := ""               # uso interno de la central
 var velocidad := 60.0        # velocidad máxima EN EMERGENCIA (metros por segundo real)
@@ -137,6 +142,7 @@ func patrullar() -> void:
 
 func velocidad_actual() -> float:
 	var v := velocidad
+	v *= 1.0 - cansancio / 400.0   # el cansancio hace que vayan algo más lentos
 	if estado == "Reponiendo material":
 		v *= FACTOR_REPONER   # sin material: vuelve a la base con prisa, sin sirenas
 	elif not en_emergencia:
@@ -235,6 +241,9 @@ func _avanzar(delta: float) -> void:
 
 
 const COLORES_PLACA := {
+	"proteccion_civil": [Color("ff8c1a"), Color("1e3a8a")],   # placa naranja
+	"guardia_civil": [Color("2e7d4f"), Color("ffffff")],       # verde
+	"ume": [Color("d4a017"), Color("1e1e1e")],                 # amarillo
 	"ambulancia": [Color("f2f6fc"), Color("d63031")],   # placa blanca, icono rojo
 	"policia": [Color("3b8eea"), Color("ffffff")],      # placa azul
 	"bomberos": [Color("d64545"), Color("ffffff")],     # placa roja
@@ -252,7 +261,7 @@ func _draw() -> void:
 	var f := ThemeDB.fallback_font
 	var parpadeo := int(_t * 6.0) % 2 == 0
 	var emergencia: bool = en_emergencia and servicio != "sospechoso"
-	var colores: Array = COLORES_PLACA.get(servicio, [Color.WHITE, Color.BLACK])
+	var colores: Array = COLORES_PLACA.get(tipo, COLORES_PLACA.get(servicio, [Color.WHITE, Color.BLACK]))
 	var placa_color: Color = colores[0]
 	var icono_color: Color = colores[1]
 	# Punto en la calle con resplandor (rosado si va en emergencia)
