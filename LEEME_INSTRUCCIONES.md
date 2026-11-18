@@ -4,20 +4,18 @@ Este prototipo sirve para comprobar dos cosas antes de construir el juego comple
 1. Que funciona en tu Fire TV con fluidez.
 2. Que el mando de PS4 responde bien.
 
-## Qué puedes hacer en el prototipo
+## Cómo se juega (versión 0.5)
 
-- Mover el mapa con el joystick izquierdo y acercar o alejar con L2/R2.
-- A los pocos segundos entra una **llamada al 112** (un accidente). Elige qué decir y tranquiliza a la llamante para averiguar dónde está.
-- Al colgar aparece el incidente en el mapa. Envía la **ambulancia A-01** y sigue cómo circula por las calles.
-- Si cuelgas antes de tener la ubicación exacta, la ambulancia tendrá que buscar el lugar y tardará más.
-- Al cabo de un minuto aparece un **aviso automático**: un coche a 112 km/h. Puedes enviar la **patrulla P-01**, mantener la vigilancia o no intervenir.
-- Al terminar cada intervención verás un **informe con la valoración**.
+- Al empezar eliges **turno de día** (08:00–20:00) o **turno de noche** (20:00–08:00). Cada turno dura **15 minutos reales**.
+- Entran **llamadas al azar** en sitios reales de Miguelturra. Tranquiliza a la persona, averigua dónde está y dale **instrucciones** mientras llega la ayuda. Algunas llamadas son **falsas o por error**. Si no contestas en 25 segundos, la persona cuelga.
+- Mientras hablas por teléfono, **el tiempo va 4 veces más lento**.
+- También hay **avisos automáticos** (radar de velocidad, detectores de humo) y **avisos de las patrullas**, que recorren su zona despacio.
+- Al enviar una unidad, enciende las **sirenas** y va mucho más rápido. Las avenidas son más rápidas que las calles del centro, y en hora punta hay más tráfico.
+- Las ambulancias **trasladan a los heridos** al hospital de Ciudad Real antes de quedar libres.
+- Cada emergencia tiene un **tiempo de urgencia** (anillo verde → rojo). Si se agota, empeora.
+- Al llegar la hora de fin del turno ya no entran avisos: **resuelve lo pendiente** y verás el **resumen del turno**. La partida se guarda sola.
 
-**Versión 0.2:** el mapa es el **Miguelturra real** (datos de © colaboradores de OpenStreetMap, licencia ODbL), con sus calles, edificios, parques y lugares de referencia. Las bases de las unidades son ficticias.
-
-**Configurar el mando:** la primera vez que abras el juego con el mando conectado, te pedirá que pulses **X** y luego **Círculo**. Así funciona aunque tu Fire TV numere los botones de otra forma. Se puede repetir desde **Pausa → Configurar botones del mando**.
-
-Para regenerar el mapa desde un archivo de OpenStreetMap: `python3 tools/osm_a_mapa.py map.osm data/map/miguelturra.json`
+Unidades: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bomberos). Las bases son ficticias.
 
 ## Controles
 
@@ -30,6 +28,7 @@ Para regenerar el mapa desde un archivo de OpenStreetMap: `python3 tools/osm_a_m
 | Cuadrado | U | Lista de unidades |
 | Triángulo | E | Lista de emergencias |
 | Cruceta | Flechas | Elegir opciones |
+| L1 / R1 | Q / R | Bajar / subir la velocidad (x1, x2, x4). L1 en x1 detiene el tiempo |
 | Options | P | Pausa (velocidad del tiempo, salir) |
 | Share | F1 | Prueba de mando (muestra FPS y botones) |
 

@@ -10,6 +10,8 @@ extends CanvasLayer
 signal llamada_contestada
 signal opcion_llamada(indice: int)
 
+var pausa_tactica := false
+
 const ANCHO := 1280.0
 const ALTO := 720.0
 
@@ -115,8 +117,10 @@ func _process(_delta: float) -> void:
 	mira.visible = not ventana_abierta()
 	if calibrando():
 		etiqueta_ayuda.text = "Configuración del mando"
-	elif get_tree().paused:
+	elif get_tree().paused and not pausa_tactica:
 		etiqueta_ayuda.text = "Cruceta: elegir   ·   X: confirmar   ·   Options o Círculo: continuar"
+	elif pausa_tactica and not ventana_abierta():
+		etiqueta_ayuda.text = "TIEMPO DETENIDO · R1: continuar · Joystick: mover · X: seleccionar · Cuadrado: unidades · Triángulo: emergencias"
 	elif panel_abierto():
 		etiqueta_ayuda.text = "Cruceta: elegir   ·   X: confirmar   ·   Círculo: volver"
 	elif llamada_abierta():
@@ -124,7 +128,7 @@ func _process(_delta: float) -> void:
 	elif aviso_llamada.visible:
 		etiqueta_ayuda.text = "X: contestar la llamada   ·   Triángulo: emergencias   ·   Joystick: mover mapa"
 	else:
-		etiqueta_ayuda.text = "Joystick izq.: mover · L2/R2: zoom · X: seleccionar · Cuadrado: unidades · Triángulo: emergencias · Options: pausa"
+		etiqueta_ayuda.text = "Joystick izq.: mover · L2/R2: zoom · L1/R1: velocidad · X: seleccionar · Cuadrado: unidades · Triángulo: emergencias · Options: pausa"
 
 
 # ---------------------------------------------------------------- API
@@ -148,7 +152,7 @@ func set_debug(visible_debug: bool, texto: String) -> void:
 
 func notificar(texto: String, color: Color = Color("e8eef6")) -> void:
 	var caja := PanelContainer.new()
-	caja.add_theme_stylebox_override("panel", _caja(Color(0.05, 0.08, 0.12, 0.92), 2, 10, color))
+	caja.add_theme_stylebox_override("panel", _caja(Color(0.03, 0.08, 0.19, 0.92), 2, 10, color))
 	caja.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var e := _etiqueta(texto, 19, color)
 	e.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -166,7 +170,13 @@ func notificar(texto: String, color: Color = Color("e8eef6")) -> void:
 
 
 ## opciones: Array de Dictionary {"texto": String, "accion": Callable, "activo": bool (opcional)}
-func mostrar_panel(titulo: String, texto: String, opciones: Array) -> void:
+func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: bool = false) -> void:
+	if centrado:
+		panel_lateral.custom_minimum_size = Vector2(620, 0)
+		panel_lateral.position = Vector2(ANCHO / 2.0 - 310.0, 90)
+	else:
+		panel_lateral.custom_minimum_size = Vector2(460, 0)
+		panel_lateral.position = Vector2(ANCHO - 474.0, 64)
 	panel_titulo.text = titulo
 	panel_texto.text = texto
 	panel_texto.visible = texto != ""
@@ -326,11 +336,11 @@ func _boton(texto: String) -> Button:
 func _crear_tema() -> Theme:
 	var t := Theme.new()
 	t.default_font_size = 22
-	var normal := _caja(Color("22324a"), 0, 12)
-	var foco := _caja(Color(0, 0, 0, 0), 4, 12, Color("ffd166"))
+	var normal := _caja(Color("1d5468"), 1, 12, Color("2f8aa6"), 6)
+	var foco := _caja(Color(0, 0, 0, 0), 4, 12, Color("9ff3ff"), 6)
 	foco.draw_center = false
-	var pulsado := _caja(Color("3d5a80"), 0, 12)
-	var desactivado := _caja(Color("1a2233"), 0, 12)
+	var pulsado := _caja(Color("2b7f99"), 1, 12, Color("9ff3ff"), 6)
+	var desactivado := _caja(Color("13283a"), 0, 12, Color.TRANSPARENT, 6)
 	t.set_stylebox("normal", "Button", normal)
 	t.set_stylebox("hover", "Button", normal)
 	t.set_stylebox("pressed", "Button", pulsado)
@@ -340,8 +350,8 @@ func _crear_tema() -> Theme:
 	t.set_color("font_focus_color", "Button", Color("ffffff"))
 	t.set_color("font_hover_color", "Button", Color("ffffff"))
 	t.set_color("font_disabled_color", "Button", Color("6b7a90"))
-	t.set_stylebox("panel", "PanelContainer", _caja(Color(0.06, 0.09, 0.14, 0.95), 2, 18, Color("4a6fa5"), 10))
-	t.set_color("font_color", "Label", Color("e8eef6"))
+	t.set_stylebox("panel", "PanelContainer", _caja(Color(0.04, 0.09, 0.2, 0.95), 2, 18, Color("3fb6d8"), 10))
+	t.set_color("font_color", "Label", Color("e2f0ff"))
 	t.set_stylebox("background", "ProgressBar", _caja(Color("1a2233"), 0, 0))
 	return t
 
@@ -350,7 +360,7 @@ func _crear_barra_superior() -> void:
 	var barra := PanelContainer.new()
 	barra.position = Vector2.ZERO
 	barra.custom_minimum_size = Vector2(ANCHO, 54)
-	barra.add_theme_stylebox_override("panel", _caja(Color(0.04, 0.06, 0.1, 0.95), 0, 10, Color.TRANSPARENT, 0))
+	barra.add_theme_stylebox_override("panel", _caja(Color(0.03, 0.07, 0.17, 0.95), 0, 10, Color.TRANSPARENT, 0))
 	barra.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	raiz.add_child(barra)
 	var fila := HBoxContainer.new()
@@ -400,7 +410,7 @@ func _crear_barra_ayuda() -> void:
 	var barra := PanelContainer.new()
 	barra.position = Vector2(0, ALTO - 40)
 	barra.custom_minimum_size = Vector2(ANCHO, 40)
-	barra.add_theme_stylebox_override("panel", _caja(Color(0.04, 0.06, 0.1, 0.95), 0, 8, Color.TRANSPARENT, 0))
+	barra.add_theme_stylebox_override("panel", _caja(Color(0.03, 0.07, 0.17, 0.95), 0, 8, Color.TRANSPARENT, 0))
 	barra.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	raiz.add_child(barra)
 	etiqueta_ayuda = _etiqueta("", 18, Color("cfd9e6"))
@@ -414,6 +424,7 @@ const COLORES_ESTADO := {
 	"Disponible": Color("2e7d32"), "En desplazamiento": Color("e67e22"),
 	"Buscando el lugar": Color("d35400"), "En intervención": Color("c0392b"),
 	"Persecución": Color("8e44ad"), "Regresando": Color("2471a3"),
+	"Patrullando": Color("1e8449"), "Traslado al hospital": Color("7d3c98"),
 }
 
 
@@ -474,7 +485,7 @@ func _crear_ventana_llamada() -> void:
 	ventana_llamada = PanelContainer.new()
 	ventana_llamada.position = Vector2(90, 66)
 	ventana_llamada.custom_minimum_size = Vector2(1100, 0)
-	ventana_llamada.add_theme_stylebox_override("panel", _caja(Color(0.04, 0.07, 0.11, 0.97), 3, 22, Color("4a90d9"), 12))
+	ventana_llamada.add_theme_stylebox_override("panel", _caja(Color(0.03, 0.08, 0.19, 0.97), 3, 22, Color("3fb6d8"), 12))
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	ventana_llamada.add_child(v)

@@ -8,6 +8,7 @@ extends RefCounted
 ## Si el operador repite una pregunta, el llamante se pone más nervioso.
 
 var datos: Dictionary = {}
+var variables: Dictionary = {}   # {lugar} y {calle} reales de esta llamada
 var nodo_actual := ""
 var calma := 30
 var precision := 0
@@ -19,8 +20,9 @@ var texto_actual := ""
 var opciones_actuales: Array = []
 
 
-func iniciar(d: Dictionary) -> void:
+func iniciar(d: Dictionary, vars: Dictionary = {}) -> void:
 	datos = d
+	variables = vars
 	calma = int(d.get("calma_inicial", 30))
 	_entrar(d["inicio"])
 
@@ -35,7 +37,7 @@ func _entrar(id: String) -> void:
 			return
 	var es_fin: bool = n.get("fin", false)
 	nodo_actual = id
-	texto_actual = n["texto"]
+	texto_actual = _formato(n["texto"])
 	if visitados.has(id) and not es_fin:
 		calma = clampi(calma - 5, 0, 100)
 		texto_actual = "¡Ya se lo he dicho! " + texto_actual
@@ -44,11 +46,14 @@ func _entrar(id: String) -> void:
 		_aplicar(n.get("efectos", {}))
 	opciones_actuales = []
 	if es_fin:
-		opciones_actuales.append({"texto": "[Colgar y crear el incidente]", "terminar": true})
+		var texto_colgar := "[Colgar]" if datos.get("falsa", false) else "[Colgar y crear el incidente]"
+		opciones_actuales.append({"texto": texto_colgar, "terminar": true})
 		return
 	for o in n.get("opciones", []):
-		opciones_actuales.append(o)
-	if precision >= 1:
+		var copia: Dictionary = o.duplicate()
+		copia["texto"] = _formato(o["texto"])
+		opciones_actuales.append(copia)
+	if precision >= 1 and not datos.get("falsa", false):
 		opciones_actuales.append({"texto": "[Terminar ya la llamada y crear el incidente]", "terminar": true})
 
 
@@ -58,11 +63,15 @@ func _aplicar(e: Dictionary) -> void:
 	if e.has("precision"):
 		precision = maxi(precision, int(e["precision"]))
 	if e.has("info"):
-		var txt: String = e["info"]
+		var txt := _formato(e["info"])
 		if not informacion.has(txt):
 			informacion.append(txt)
 	if e.has("marca"):
 		marcas.append(e["marca"])
+
+
+func _formato(texto: String) -> String:
+	return texto.format(variables)
 
 
 func elegir(indice: int) -> void:

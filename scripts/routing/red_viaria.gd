@@ -8,6 +8,7 @@ var tramos: Array = []            # [nodo_a, nodo_b, indice_calle, es_principal]
 var calles: Array = []            # nombres de las calles
 var vecinos: Dictionary = {}      # nodo -> Array de nodos vecinos
 var calle_nodo: Dictionary = {}   # nodo -> nombre de una calle que pasa por él
+var principales: Dictionary = {}  # clave de tramo -> true si es calle principal
 var astar := AStar2D.new()
 
 
@@ -25,12 +26,23 @@ func cargar(datos: Dictionary) -> void:
 		vecinos[a].append(b)
 		vecinos[b].append(a)
 		tramos.append(t)
+		if int(t[3]) == 1:
+			principales[_clave(a, b)] = true
 		var nombre: String = calles[int(t[2])]
 		if nombre != "":
 			if not calle_nodo.has(a):
 				calle_nodo[a] = nombre
 			if not calle_nodo.has(b):
 				calle_nodo[b] = nombre
+
+
+func _clave(a: int, b: int) -> int:
+	return mini(a, b) * 100000 + maxi(a, b)
+
+
+## Las avenidas y rondas son más rápidas que las calles estrechas.
+func factor_tramo(a: int, b: int) -> float:
+	return 1.25 if principales.has(_clave(a, b)) else 0.85
 
 
 func pos(id: int) -> Vector2:

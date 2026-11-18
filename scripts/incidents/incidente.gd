@@ -12,6 +12,10 @@ var tipo := "llamada"
 var titulo := ""
 var fuente := "Llamada al 112"
 var servicio_necesario := "ambulancia"
+## Servicios que hay que enviar (se dibujan como colores del hexágono)
+var servicios: Array = ["ambulancia"]
+var traslado := false          # la ambulancia lleva al herido al hospital
+var tiempo_intervencion := 10.0 # segundos en el lugar
 var informacion: Array = []
 var marcas: Array = []
 var estado := "Pendiente"       # Pendiente, Unidad en camino, En intervención, Persecución en curso, Resuelta
@@ -105,42 +109,88 @@ func _actualizar_humo(delta: float) -> void:
 	_humo = vivas
 
 
+const COLOR_SERVICIO := {
+	"ambulancia": [Color("f2f6fc"), Color("d63031")],   # blanco
+	"policia": [Color("3b8eea"), Color("ffffff")],      # azul
+	"bomberos": [Color("d64545"), Color("ffffff")],     # rojo
+}
+const ORDEN_SERVICIOS := ["ambulancia", "policia", "bomberos"]
+
+
 func _draw() -> void:
 	if not activo():
 		return
 	var f := ThemeDB.fallback_font
 	var r := radio_visible()
 	if r > 0.0:
-		draw_circle(Vector2.ZERO, r, Color(1, 0.45, 0.2, 0.12))
-		draw_arc(Vector2.ZERO, r, 0.0, TAU, 64, Color(1, 0.55, 0.25, 0.6), 3.0)
+		draw_circle(Vector2.ZERO, r, Color(0.4, 0.75, 1.0, 0.10))
+		draw_arc(Vector2.ZERO, r, 0.0, TAU, 64, Color(0.55, 0.85, 1.0, 0.6), 3.0)
 	var s := escala_icono
 	if tipo == "incendio":
 		_dibujar_fuego()
-	var pulso := 1.0 + 0.25 * sin(_t * 5.0)
-	var color := Color("ff4d4d")
-	if tipo == "aviso_trafico":
-		color = Color("ffa630")
-	elif tipo == "incendio":
-		color = Color("ff7a1a")
-	draw_circle(Vector2.ZERO, 34.0 * s * pulso, Color(color, 0.22))
+	# Ondas en el suelo
+	for k in 2:
+		var fase := fmod(_t * 0.8 + k * 0.5, 1.0)
+		draw_arc(Vector2.ZERO, (8.0 + fase * 26.0) * s, 0.0, TAU, 32, Color(0.6, 0.85, 1.0, 0.8 * (1.0 - fase)), 2.0 * s)
+	draw_circle(Vector2.ZERO, 5.0 * s, Color("bfe6ff"))
+	# Hexágono flotante con los colores de los servicios necesarios
+	var alto := 48.0 if vehiculo_seguido == null else 92.0
+	var centro := Vector2(0, -alto) * s
+	var radio := 24.0 * s
+	draw_line(Vector2.ZERO, centro + Vector2(0, radio), Color(0.75, 0.9, 1.0, 0.9), 2.0 * s)
+	var hex := PackedVector2Array()
+	for i in 6:
+		var a := deg_to_rad(60.0 * i - 90.0)
+		hex.append(centro + Vector2(cos(a), sin(a)) * radio)
+	var lista: Array = []
+	for sv in ORDEN_SERVICIOS:
+		if servicios.has(sv):
+			lista.append(sv)
+	if lista.is_empty():
+		lista = ["policia"]
+	var ancho_franja := radio * 2.0 / lista.size()
+	for k in lista.size():
+		var x0 := centro.x - radio + k * ancho_franja
+		var franja := PackedVector2Array([
+			Vector2(x0, centro.y - radio * 1.2), Vector2(x0 + ancho_franja, centro.y - radio * 1.2),
+			Vector2(x0 + ancho_franja, centro.y + radio * 1.2), Vector2(x0, centro.y + radio * 1.2)])
+		var colores: Array = COLOR_SERVICIO[lista[k]]
+		for trozo in Geometry2D.intersect_polygons(hex, franja):
+			draw_colored_polygon(trozo, colores[0])
+		_dibujar_simbolo(lista[k], Vector2(x0 + ancho_franja / 2.0, centro.y), colores[1], s * (1.0 if lista.size() == 1 else 0.75))
+	var borde := hex.duplicate()
+	borde.append(hex[0])
+	draw_polyline(borde, Color.WHITE, 2.5 * s)
 	if seleccionado:
-		draw_arc(Vector2.ZERO, 40.0 * s, 0.0, TAU, 32, Color.WHITE, 3.0 * s)
-	# Anillo de urgencia: se vacía con el tiempo (verde -> rojo)
+		var grande := PackedVector2Array()
+		for p in borde:
+			grande.append(centro + (p - centro) * 1.3)
+		draw_polyline(grande, Color("9ff3ff"), 3.0 * s)
+	# Anillo de urgencia alrededor del hexágono (verde -> rojo)
 	if esperando_ayuda():
 		var fr := urgencia_restante / urgencia_total
 		var col_urg := Color("e74c3c").lerp(Color("2ecc71"), fr)
-		draw_arc(Vector2.ZERO, 30.0 * s, -PI / 2.0, -PI / 2.0 + TAU * fr, 40, col_urg, 5.0 * s)
-	if vehiculo_seguido == null:
-		draw_circle(Vector2.ZERO, 21.0 * s, color)
-		draw_arc(Vector2.ZERO, 21.0 * s, 0.0, TAU, 28, Color(0, 0, 0, 0.8), 2.0 * s)
-		var simbolo := "!"
-		if tipo == "incendio":
-			simbolo = "F"
-		elif servicio_necesario == "ambulancia":
-			simbolo = "+"
-		draw_string(f, Vector2(-20, 10) * s, simbolo, HORIZONTAL_ALIGNMENT_CENTER, 40 * s, int(28 * s), Color.BLACK)
-	draw_string_outline(f, Vector2(-100, -46) * s, id_incidente, HORIZONTAL_ALIGNMENT_CENTER, 200 * s, int(18 * s), int(4 * s), Color("0f151c"))
-	draw_string(f, Vector2(-100, -46) * s, id_incidente, HORIZONTAL_ALIGNMENT_CENTER, 200 * s, int(18 * s), Color.WHITE)
+		draw_arc(centro, radio + 7.0 * s, -PI / 2.0, -PI / 2.0 + TAU * fr, 40, col_urg, 4.0 * s)
+	draw_string_outline(f, centro + Vector2(-100, -radio - 12.0 * s), id_incidente, HORIZONTAL_ALIGNMENT_CENTER, 200, int(16 * s), int(4 * s), Color("0a1430"))
+	draw_string(f, centro + Vector2(-100, -radio - 12.0 * s), id_incidente, HORIZONTAL_ALIGNMENT_CENTER, 200, int(16 * s), Color.WHITE)
+
+
+func _dibujar_simbolo(servicio: String, c: Vector2, col: Color, s: float) -> void:
+	match servicio:
+		"ambulancia":
+			draw_rect(Rect2(c + Vector2(-9, -3) * s, Vector2(18, 6) * s), col)
+			draw_rect(Rect2(c + Vector2(-3, -9) * s, Vector2(6, 18) * s), col)
+		"policia":
+			var escudo := PackedVector2Array([
+				c + Vector2(-8, -9) * s, c + Vector2(8, -9) * s, c + Vector2(8, 1) * s,
+				c + Vector2(0, 10) * s, c + Vector2(-8, 1) * s])
+			draw_colored_polygon(escudo, col)
+		"bomberos":
+			var llama := PackedVector2Array([
+				c + Vector2(0, -11) * s, c + Vector2(6, -2) * s, c + Vector2(7, 4) * s,
+				c + Vector2(3, 9) * s, c + Vector2(-3, 9) * s, c + Vector2(-7, 4) * s,
+				c + Vector2(-5, -3) * s, c + Vector2(-2, 1) * s])
+			draw_colored_polygon(llama, col)
 
 
 func _dibujar_fuego() -> void:

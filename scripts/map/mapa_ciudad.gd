@@ -4,33 +4,34 @@ extends Node2D
 ## Las calles y edificios se crean una sola vez como nodos estáticos,
 ## así el Fire TV no tiene que recalcularlos en cada fotograma.
 
-const COLOR_FONDO := Color("0f151c")
+const COLOR_FONDO := Color("0a1430")
+const COLOR_TEXTO := Color("9ec4ff")
 
 const ESTILO_ZONAS := {
 	# tipo: [color, orden de dibujo]
-	"campo": [Color("141e17"), 0],
-	"residencial": [Color("1a2430"), 1],
-	"industrial": [Color("211f2b"), 1],
-	"comercial": [Color("23222e"), 1],
-	"aparcamiento": [Color("1d2632"), 2],
-	"plaza": [Color("27323f"), 2],
-	"deporte": [Color("173028"), 2],
-	"parque": [Color("15301f"), 2],
-	"agua": [Color("0f3350"), 3],
+	"campo": [Color("0c1a35"), 0],
+	"residencial": [Color("0f2148"), 1],
+	"industrial": [Color("131d47"), 1],
+	"comercial": [Color("15214c"), 1],
+	"aparcamiento": [Color("13264f"), 2],
+	"plaza": [Color("19305f"), 2],
+	"deporte": [Color("0f344c"), 2],
+	"parque": [Color("0e3848"), 2],
+	"agua": [Color("0b3f74"), 3],
 }
 
 const ESTILO_VIAS := {
 	# tipo: [color, ancho en metros, orden]
-	"path": [Color("33404d"), 2.5, 0], "footway": [Color("33404d"), 2.5, 0],
-	"cycleway": [Color("2f4a52"), 2.5, 0], "track": [Color("39432f"), 4.0, 0],
-	"service": [Color("3a4859"), 6.0, 1], "pedestrian": [Color("3e4858"), 8.0, 1],
-	"living_street": [Color("475870"), 10.0, 2], "residential": [Color("475870"), 10.0, 2],
-	"unclassified": [Color("53657e"), 11.0, 3],
-	"tertiary": [Color("6a7f9f"), 14.0, 4], "tertiary_link": [Color("6a7f9f"), 12.0, 4],
-	"secondary": [Color("7a8fb0"), 15.0, 4], "secondary_link": [Color("7a8fb0"), 12.0, 4],
-	"primary": [Color("8aa0c2"), 16.0, 4], "primary_link": [Color("8aa0c2"), 12.0, 4],
-	"trunk": [Color("9ab0d2"), 18.0, 4], "trunk_link": [Color("9ab0d2"), 12.0, 4],
-	"motorway": [Color("9ab0d2"), 20.0, 4], "motorway_link": [Color("9ab0d2"), 12.0, 4],
+	"path": [Color("1b3568"), 2.5, 0], "footway": [Color("1b3568"), 2.5, 0],
+	"cycleway": [Color("1b3d68"), 2.5, 0], "track": [Color("1c3659"), 4.0, 0],
+	"service": [Color("23437e"), 6.0, 1], "pedestrian": [Color("284a88"), 8.0, 1],
+	"living_street": [Color("2c5098"), 10.0, 2], "residential": [Color("2c5098"), 10.0, 2],
+	"unclassified": [Color("3560aa"), 11.0, 3],
+	"tertiary": [Color("4a80d2"), 14.0, 4], "tertiary_link": [Color("4a80d2"), 12.0, 4],
+	"secondary": [Color("5590e0"), 15.0, 4], "secondary_link": [Color("5590e0"), 12.0, 4],
+	"primary": [Color("62a0ee"), 16.0, 4], "primary_link": [Color("62a0ee"), 12.0, 4],
+	"trunk": [Color("70aef8"), 18.0, 4], "trunk_link": [Color("70aef8"), 12.0, 4],
+	"motorway": [Color("70aef8"), 20.0, 4], "motorway_link": [Color("70aef8"), 12.0, 4],
 }
 
 const ICONOS := {
@@ -111,7 +112,7 @@ func _crear_tren() -> void:
 		var l := Line2D.new()
 		l.points = _puntos(t)
 		l.width = 5.0
-		l.default_color = Color("4b525e")
+		l.default_color = Color("2a3f70")
 		add_child(l)
 
 
@@ -119,7 +120,15 @@ func _crear_vias() -> void:
 	var vias: Array = datos["vias"].duplicate()
 	vias.sort_custom(func(a, b): return ESTILO_VIAS.get(a["tipo"], [Color.BLACK, 1.0, 2])[2] < ESTILO_VIAS.get(b["tipo"], [Color.BLACK, 1.0, 2])[2])
 	for v in vias:
-		var estilo: Array = ESTILO_VIAS.get(v["tipo"], [Color("475870"), 10.0, 2])
+		var estilo: Array = ESTILO_VIAS.get(v["tipo"], [Color("2c5098"), 10.0, 2])
+		if estilo[2] >= 4:
+			# Resplandor de las calles principales
+			var brillo := Line2D.new()
+			brillo.points = _puntos(v["puntos"])
+			brillo.width = estilo[1] * 2.6
+			brillo.default_color = Color(0.35, 0.6, 1.0, 0.10)
+			brillo.joint_mode = Line2D.LINE_JOINT_ROUND
+			add_child(brillo)
 		var l := Line2D.new()
 		l.points = _puntos(v["puntos"])
 		l.width = estilo[1]
@@ -134,7 +143,7 @@ func _crear_edificios() -> void:
 	for e in datos["edificios"]:
 		var poly := Polygon2D.new()
 		poly.polygon = _puntos(e)
-		poly.color = Color("2f425e")
+		poly.color = Color("1b3772")
 		add_child(poly)
 
 
@@ -148,7 +157,19 @@ func _dibujar_iconos() -> void:
 		var icono: Array = ICONOS[tipo]
 		_icono(Vector2(float(l["x"]), float(l["y"])), icono[0], icono[1], 13.0)
 	for b in bases:
-		_icono(b["pos"], b["letra"], b["color"], 17.0)
+		_hexagono_base(b["pos"], b["color"], b["letra"])
+
+
+func _hexagono_base(p: Vector2, color: Color, letra: String) -> void:
+	var hex := PackedVector2Array()
+	for i in 6:
+		var a := deg_to_rad(60.0 * i - 90.0)
+		hex.append(p + Vector2(cos(a), sin(a)) * 22.0)
+	capa_iconos.draw_colored_polygon(hex, Color("0d2a5c"))
+	var borde := hex.duplicate()
+	borde.append(hex[0])
+	capa_iconos.draw_polyline(borde, color, 3.0)
+	capa_iconos.draw_string(fuente, p + Vector2(-22, 7), letra, HORIZONTAL_ALIGNMENT_CENTER, 44, 20, color)
 
 
 func _icono(p: Vector2, letra: String, color: Color, radio: float) -> void:
@@ -178,17 +199,17 @@ func _dibujar_nombres() -> void:
 		if angulo > PI / 2.0 or angulo < -PI / 2.0:
 			angulo += PI
 		capa_nombres.draw_set_transform((a + b) / 2.0, angulo, Vector2.ONE)
-		capa_nombres.draw_string_outline(fuente, Vector2(-200, 6), nombre, HORIZONTAL_ALIGNMENT_CENTER, 400, 18, 4, Color("0f151c"))
-		capa_nombres.draw_string(fuente, Vector2(-200, 6), nombre, HORIZONTAL_ALIGNMENT_CENTER, 400, 18, Color("c3d0df"))
+		capa_nombres.draw_string_outline(fuente, Vector2(-200, 6), nombre, HORIZONTAL_ALIGNMENT_CENTER, 400, 18, 4, Color("0a1430"))
+		capa_nombres.draw_string(fuente, Vector2(-200, 6), nombre, HORIZONTAL_ALIGNMENT_CENTER, 400, 18, COLOR_TEXTO)
 	capa_nombres.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# Nombres de lugares
 	for l in datos["lugares"]:
 		var p := Vector2(float(l["x"]), float(l["y"]))
 		var desplaz := Vector2(-150, 34) if ICONOS.has(l["tipo"]) else Vector2(-150, 6)
-		var color := Color("e8eef6") if ICONOS.has(l["tipo"]) else Color("8fd3a0")
-		capa_nombres.draw_string_outline(fuente, p + desplaz, l["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 15, 4, Color("0f151c"))
+		var color := Color("d6e6ff") if ICONOS.has(l["tipo"]) else Color("7fe0d0")
+		capa_nombres.draw_string_outline(fuente, p + desplaz, l["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 15, 4, Color("0a1430"))
 		capa_nombres.draw_string(fuente, p + desplaz, l["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 15, color)
 	for b in bases:
 		var p: Vector2 = b["pos"] + Vector2(-150, 40)
-		capa_nombres.draw_string_outline(fuente, p, b["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 17, 4, Color("0f151c"))
+		capa_nombres.draw_string_outline(fuente, p, b["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 17, 4, Color("0a1430"))
 		capa_nombres.draw_string(fuente, p, b["nombre"], HORIZONTAL_ALIGNMENT_CENTER, 300, 17, b["color"])
