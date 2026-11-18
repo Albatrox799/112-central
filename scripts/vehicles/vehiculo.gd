@@ -24,6 +24,14 @@ const FACTOR_PATRULLA := 0.35
 
 var id_unidad := ""
 var servicio := ""
+# Datos de gestión (tienda y personal)
+var tipo := ""               # clave del catálogo (patrulla, ambulancia_b...)
+var nombre_tipo := ""
+var personal := 2
+var heridos: Array = []      # turnos de baja que le quedan a cada herido
+var equipo: Array = []       # equipo comprado para este vehículo
+var bono := ""
+var indice_flota := -1
 var estado := "Disponible"   # Disponible, Patrullando, En desplazamiento, Buscando el lugar, En intervención, Traslado al hospital, Regresando, Persecución
 var fase := ""               # uso interno de la central
 var velocidad := 60.0        # velocidad máxima EN EMERGENCIA (metros por segundo real)
@@ -59,12 +67,23 @@ func configurar(p_id: String, p_servicio: String, p_color: Color, p_letra: Strin
 
 
 func nombre_servicio() -> String:
+	if nombre_tipo != "":
+		return nombre_tipo
 	return NOMBRES_SERVICIO.get(servicio, servicio)
+
+
+## Personas que pueden trabajar (sin contar a los heridos de baja).
+func efectivos() -> int:
+	return maxi(personal - heridos.size(), 0)
+
+
+func tiene(cosa: String) -> bool:
+	return equipo.has(cosa)
 
 
 ## ¿Se le puede enviar a una emergencia?
 func disponible() -> bool:
-	return estado == "Disponible" or estado == "Patrullando"
+	return (estado == "Disponible" or estado == "Patrullando") and efectivos() > 0
 
 
 func colocar_en(nodo: int) -> void:

@@ -15,7 +15,27 @@ Este prototipo sirve para comprobar dos cosas antes de construir el juego comple
 - Cada emergencia tiene un **tiempo de urgencia** (anillo verde → rojo). Si se agota, empeora.
 - Al llegar la hora de fin del turno ya no entran avisos: **resuelve lo pendiente** y verás el **resumen del turno**. La partida se guarda sola.
 
-Unidades: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bomberos). Las bases son ficticias.
+Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bomberos). Las bases son ficticias.
+
+## Novedades de la versión 0.6
+
+- **Dinero**: cada emergencia resuelta se cobra según la nota. Las llamadas perdidas restan dinero y el personal cobra su sueldo al final de cada turno.
+- **Pantalla de equipos** antes de cada turno: personal de cada vehículo, contratar o despedir, comprar equipo y vender vehículos.
+- **Tienda**: motos, furgones, ambulancias de soporte vital, camión escalera y unidad de rescate, además del equipo para cada servicio (chalecos, antidisturbios, alcoholímetro, extinción, búsqueda, equipo técnico, botiquín y desfibrilador).
+- **En el lugar**: al llegar las unidades se ve abajo a la izquierda un plano con lo que pasa (detenciones, incendios, heridos, atrapados, controles).
+- **Refuerzos**: algunas emergencias necesitan varias unidades, y a veces piden más a mitad de la intervención. El hexágono muestra "+1" y hay 40 segundos para mandarlas.
+- **Enviar desde la unidad**: selecciona una unidad con X y elige la emergencia de la lista (ordenada por cercanía) o con la mira en el mapa.
+- **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
+
+
+## Novedades de la versión 0.7
+
+- **Portada** animada con menú: Continuar partida, Nueva partida, Cómo se juega, Opciones (volumen, tamaño de texto, dificultad, mando), Créditos y Salir.
+- **Historias**: llamadas en las que lo que pasa de verdad se decide en secreto y se va descubriendo. Puede haber sorpresas durante la llamada, la historia sigue después de colgar, las unidades piden órdenes y otras personas llaman por lo mismo (se unen a la misma emergencia).
+  - "Mi marido se ha desplomado", "Gritos en el piso de al lado" y "Hay humo en mi edificio".
+- **Ficha de la emergencia** con lo confirmado, lo que está sin confirmar y los últimos hechos.
+- **Objetivos del turno** con premio en dinero.
+- **Turno de práctica** con consejos paso a paso (desde "Cómo se juega").
 
 ## Controles
 

@@ -11,6 +11,8 @@ extends RefCounted
 ##        servicios (colores del hexágono), principal (quién lo resuelve),
 ##        urgencia (segundos reales antes de empeorar), traslado (al hospital),
 ##        intervencion (segundos que tarda la unidad en el lugar)
+##        categoria (mini evento: medico, pelea, robo, fuego, busqueda...)
+##        requeridas (cuántas unidades de cada servicio hacen falta)
 ##   "nodos": la conversación. En los textos:
 ##        {lugar} = lugar real de referencia, {calle} = su calle
 ##   Efectos: calma (+/-), precision (1 zona, 2 referencia, 3 punto exacto),
@@ -24,7 +26,8 @@ const LLAMADAS := [
 		"estados": ["En pánico", "Muy asustada", "Nerviosa", "Tranquila"],
 		"referencias": ["iglesia", "plaza", "supermercado", "colegio", "gasolinera", "teatro"],
 		"incidente": {"titulo": "Accidente de tráfico con herido", "servicios": ["ambulancia", "policia"],
-			"principal": "ambulancia", "urgencia": 75.0, "traslado": true, "intervencion": 10.0},
+			"principal": "ambulancia", "urgencia": 75.0, "traslado": true, "intervencion": 10.0,
+			"categoria": "medico", "requeridas": {"ambulancia": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "¡Por favor, necesito ayuda! Un coche se ha subido a la acera y ha chocado. Creo que hay una persona herida.",
@@ -89,7 +92,8 @@ const LLAMADAS := [
 		"estados": ["Desesperado", "Muy nervioso", "Preocupado", "Tranquilo"],
 		"referencias": ["iglesia", "plaza", "colegio", "supermercado", "parque", "sanidad"],
 		"incidente": {"titulo": "Persona mayor caída en su casa", "servicios": ["ambulancia"],
-			"principal": "ambulancia", "urgencia": 90.0, "traslado": true, "intervencion": 12.0},
+			"principal": "ambulancia", "urgencia": 90.0, "traslado": true, "intervencion": 12.0,
+			"categoria": "medico", "requeridas": {"ambulancia": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "Llamo por mi madre, tiene 84 años. Se ha caído en el baño y no se puede levantar. ¡Se queja mucho de la cadera!",
@@ -128,7 +132,8 @@ const LLAMADAS := [
 		"estados": ["En pánico", "Muy asustada", "Nerviosa", "Tranquila"],
 		"referencias": ["colegio", "parque", "supermercado", "plaza", "deporte"],
 		"incidente": {"titulo": "Incendio en la cocina de un piso", "servicios": ["bomberos", "ambulancia"],
-			"principal": "bomberos", "urgencia": 70.0, "traslado": false, "intervencion": 14.0},
+			"principal": "bomberos", "urgencia": 70.0, "traslado": false, "intervencion": 14.0,
+			"categoria": "fuego", "requeridas": {"bomberos": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "¡Fuego! ¡Se me ha prendido la sartén y las llamas llegan al techo de la cocina!",
@@ -168,7 +173,8 @@ const LLAMADAS := [
 		"estados": ["En pánico", "Muy asustada", "Nerviosa", "Tranquila"],
 		"referencias": ["parque", "deporte", "plaza"],
 		"incidente": {"titulo": "Menor desaparecido", "servicios": ["policia"],
-			"principal": "policia", "urgencia": 80.0, "traslado": false, "intervencion": 12.0},
+			"principal": "policia", "urgencia": 80.0, "traslado": false, "intervencion": 12.0,
+			"categoria": "busqueda", "requeridas": {"policia": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "¡No encuentro a mi hijo! Estábamos jugando y ha desaparecido. ¡Tiene 6 años!",
@@ -226,7 +232,8 @@ const LLAMADAS := [
 		"estados": ["En pánico", "Muy nervioso", "Nervioso", "Tranquilo"],
 		"referencias": ["bar", "plaza", "restaurante", "teatro"],
 		"incidente": {"titulo": "Pelea con un herido", "servicios": ["policia", "ambulancia"],
-			"principal": "policia", "urgencia": 70.0, "traslado": false, "intervencion": 12.0},
+			"principal": "policia", "urgencia": 70.0, "traslado": false, "intervencion": 12.0,
+			"categoria": "pelea", "requeridas": {"policia": 2, "ambulancia": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "¡Se están pegando a la salida del bar! Son como cinco y uno está en el suelo.",
@@ -265,7 +272,8 @@ const LLAMADAS := [
 		"estados": ["Aterrorizada", "Muy asustada", "Nerviosa", "Tranquila"],
 		"referencias": ["iglesia", "colegio", "plaza", "parque"],
 		"incidente": {"titulo": "Robo en vivienda con la dueña dentro", "servicios": ["policia"],
-			"principal": "policia", "urgencia": 65.0, "traslado": false, "intervencion": 12.0},
+			"principal": "policia", "urgencia": 65.0, "traslado": false, "intervencion": 12.0,
+			"categoria": "robo", "requeridas": {"policia": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "(susurrando) Hay alguien dentro de mi casa... he oído romperse un cristal abajo.",
@@ -304,7 +312,8 @@ const LLAMADAS := [
 		"estados": ["Muy alterado", "Nervioso", "Preocupado", "Tranquilo"],
 		"referencias": ["supermercado", "parque", "colegio", "deporte", "gasolinera"],
 		"incidente": {"titulo": "Contenedor ardiendo junto a coches", "servicios": ["bomberos", "policia"],
-			"principal": "bomberos", "urgencia": 70.0, "traslado": false, "intervencion": 10.0},
+			"principal": "bomberos", "urgencia": 70.0, "traslado": false, "intervencion": 10.0,
+			"categoria": "fuego", "requeridas": {"bomberos": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "Buenas noches. Está ardiendo un contenedor en mi calle y el fuego está muy cerca de unos coches.",
@@ -333,7 +342,8 @@ const LLAMADAS := [
 		"estados": ["En pánico", "Asustada", "Nerviosa", "Tranquila"],
 		"referencias": ["plaza", "parque", "bar", "gasolinera"],
 		"incidente": {"titulo": "Persona inconsciente en la calle", "servicios": ["ambulancia"],
-			"principal": "ambulancia", "urgencia": 75.0, "traslado": true, "intervencion": 10.0},
+			"principal": "ambulancia", "urgencia": 75.0, "traslado": true, "intervencion": 10.0,
+			"categoria": "medico", "requeridas": {"ambulancia": 1}},
 		"inicio": "inicio",
 		"nodos": {
 			"inicio": {"texto": "Hay un hombre tirado en la acera. No sé si está borracho o le ha pasado algo.",

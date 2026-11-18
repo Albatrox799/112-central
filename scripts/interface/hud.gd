@@ -11,11 +11,23 @@ signal llamada_contestada
 signal opcion_llamada(indice: int)
 
 var pausa_tactica := false
+var modo_envio := ""   # id de la unidad que se está enviando con la mira
 
 const ANCHO := 1280.0
 const ALTO := 720.0
 
+const VistaLugar = preload("res://scripts/interface/vista_lugar.gd")
+
 var tema: Theme
+var etiqueta_dinero: Label
+var barra_superior: PanelContainer
+var portada: Control
+var panel_consejo: PanelContainer
+var texto_consejo: Label
+var tween_consejo: Tween
+var _t_portada := 0.0
+var vista_lugar
+var scroll_opciones: ScrollContainer
 var raiz: Control
 var etiqueta_reloj: Label
 var etiqueta_velocidad: Label
@@ -59,13 +71,104 @@ func _ready() -> void:
 	_crear_barra_ayuda()
 	_crear_barra_unidades()
 	_crear_debug()
+	vista_lugar = VistaLugar.new()
+	vista_lugar.position = Vector2(14, 296)
+	vista_lugar.visible = false
+	raiz.add_child(vista_lugar)
 	_crear_aviso_llamada()
 	_crear_ventana_llamada()
 	_crear_panel_lateral()
 	_crear_calibracion()
+	_crear_consejo()
+	_crear_portada()
 	var osm := _etiqueta("Mapa: © colaboradores de OpenStreetMap", 14, Color(0.8, 0.85, 0.9, 0.7))
 	osm.position = Vector2(ANCHO - 300, ALTO - 62)
 	raiz.add_child(osm)
+
+
+# ---------------------------------------------------------------- PORTADA
+
+func _crear_portada() -> void:
+	portada = Control.new()
+	portada.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	portada.size = Vector2(ANCHO, ALTO)
+	portada.draw.connect(_dibujar_portada)
+	portada.visible = false
+	raiz.add_child(portada)
+	raiz.move_child(portada, 0)
+
+
+func mostrar_portada(si: bool) -> void:
+	portada.visible = si
+	barra_superior.visible = not si
+	barra_unidades.visible = not si
+
+
+func _dibujar_portada() -> void:
+	var f := ThemeDB.fallback_font
+	# Oscurecer arriba para que se lea el logo
+	portada.draw_rect(Rect2(0, 0, ANCHO, 360), Color(0.02, 0.05, 0.13, 0.55))
+	# Emblema: hexágono con los colores de los tres servicios
+	var c := Vector2(ANCHO / 2.0, 120)
+	var r := 62.0
+	var hex := PackedVector2Array()
+	for i in 6:
+		var a := deg_to_rad(60.0 * i - 90.0)
+		hex.append(c + Vector2(cos(a), sin(a)) * r)
+	var colores := [Color("f2f6fc"), Color("3b8eea"), Color("d64545")]
+	var franja := r * 2.0 / 3.0
+	for k in 3:
+		var x0 := c.x - r + k * franja
+		var rect := PackedVector2Array([Vector2(x0, c.y - r * 1.2), Vector2(x0 + franja, c.y - r * 1.2), Vector2(x0 + franja, c.y + r * 1.2), Vector2(x0, c.y + r * 1.2)])
+		for trozo in Geometry2D.intersect_polygons(hex, rect):
+			portada.draw_colored_polygon(trozo, colores[k])
+	var borde := hex.duplicate()
+	borde.append(hex[0])
+	portada.draw_polyline(borde, Color.WHITE, 4.0)
+	portada.draw_string(f, c + Vector2(-60, 14), "112", HORIZONTAL_ALIGNMENT_CENTER, 120, 40, Color("0a1430"))
+	# Título
+	portada.draw_string_outline(f, Vector2(0, 250), "CENTRAL 112", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 76, 10, Color("0a1430"))
+	portada.draw_string(f, Vector2(0, 250), "CENTRAL 112", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 76, Color.WHITE)
+	portada.draw_string_outline(f, Vector2(0, 298), "M I G U E L T U R R A", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 32, 8, Color("0a1430"))
+	portada.draw_string(f, Vector2(0, 298), "M I G U E L T U R R A", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 32, Color("9ff3ff"))
+	# Destello rojo y azul que recorre el título, como una sirena
+	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
+	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
+	portada.draw_rect(Rect2(x, 185, 140, 125), col)
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.7", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+
+
+# ---------------------------------------------------------------- CONSEJOS (tutorial)
+
+func _crear_consejo() -> void:
+	panel_consejo = PanelContainer.new()
+	panel_consejo.position = Vector2(ANCHO / 2.0 - 380.0, 62)
+	panel_consejo.custom_minimum_size = Vector2(760, 0)
+	panel_consejo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel_consejo.add_theme_stylebox_override("panel", _caja(Color(0.25, 0.2, 0.02, 0.95), 3, 14, Color("ffd166"), 10))
+	texto_consejo = _etiqueta("", 21, Color("fff3c4"))
+	texto_consejo.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	texto_consejo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel_consejo.add_child(texto_consejo)
+	panel_consejo.visible = false
+	raiz.add_child(panel_consejo)
+
+
+func mostrar_consejo(texto: String) -> void:
+	texto_consejo.text = "CONSEJO · " + texto
+	panel_consejo.visible = true
+	panel_consejo.modulate = Color.WHITE
+	call_deferred("_ajustar", panel_consejo)
+	if tween_consejo:
+		tween_consejo.kill()
+	tween_consejo = panel_consejo.create_tween()
+	tween_consejo.tween_interval(13.0)
+	tween_consejo.tween_property(panel_consejo, "modulate:a", 0.0, 0.8)
+	tween_consejo.tween_callback(func(): panel_consejo.visible = false)
+
+
+func set_texto_grande(grande: bool) -> void:
+	tema.default_font_size = 26 if grande else 22
 
 
 var panel_calibracion: PanelContainer
@@ -113,8 +216,42 @@ func ventana_abierta() -> bool:
 	return panel_abierto() or llamada_abierta()
 
 
-func _process(_delta: float) -> void:
-	mira.visible = not ventana_abierta()
+## Moverse por la lista activa con la cruceta, siempre en orden
+## (arriba/abajo), sin depender de la posición de los botones en pantalla.
+func _input(event: InputEvent) -> void:
+	if calibrando():
+		return
+	var abajo := event.is_action_pressed("nav_abajo")
+	var arriba := event.is_action_pressed("nav_arriba")
+	if not abajo and not arriba:
+		return
+	var lista: Node = null
+	if panel_lateral.visible:
+		lista = panel_opciones
+	elif ventana_llamada.visible:
+		lista = ll_opciones
+	if lista == null:
+		return
+	var botones := []
+	for h in lista.get_children():
+		if h is Button and not h.disabled and h.focus_mode != Control.FOCUS_NONE:
+			botones.append(h)
+	if botones.is_empty():
+		return
+	var actual := botones.find(raiz.get_viewport().gui_get_focus_owner())
+	var siguiente := 0
+	if actual >= 0:
+		siguiente = (actual + (1 if abajo else -1) + botones.size()) % botones.size()
+	botones[siguiente].grab_focus()
+	get_viewport().set_input_as_handled()
+
+
+func _process(delta: float) -> void:
+	if portada.visible:
+		_t_portada += delta
+		portada.queue_redraw()
+	mira.visible = not ventana_abierta() and not portada.visible
+	mira.queue_redraw()
 	if calibrando():
 		etiqueta_ayuda.text = "Configuración del mando"
 	elif get_tree().paused and not pausa_tactica:
@@ -125,6 +262,8 @@ func _process(_delta: float) -> void:
 		etiqueta_ayuda.text = "Cruceta: elegir   ·   X: confirmar   ·   Círculo: volver"
 	elif llamada_abierta():
 		etiqueta_ayuda.text = "Cruceta: elegir qué decir   ·   X: decirlo"
+	elif modo_envio != "":
+		etiqueta_ayuda.text = "ENVIANDO %s · Mueve la mira a una emergencia · X: enviar · Círculo: cancelar" % modo_envio
 	elif aviso_llamada.visible:
 		etiqueta_ayuda.text = "X: contestar la llamada   ·   Triángulo: emergencias   ·   Joystick: mover mapa"
 	else:
@@ -135,6 +274,30 @@ func _process(_delta: float) -> void:
 
 func set_reloj(texto: String) -> void:
 	etiqueta_reloj.text = texto
+
+
+func set_dinero(cantidad: int) -> void:
+	etiqueta_dinero.text = formato_euros(cantidad)
+
+
+static func formato_euros(cantidad: int) -> String:
+	var signo := "-" if cantidad < 0 else ""
+	var t := str(absi(cantidad))
+	var out := ""
+	while t.length() > 3:
+		out = "." + t.right(3) + out
+		t = t.left(t.length() - 3)
+	return signo + t + out + " €"
+
+
+func mostrar_lugar(inc) -> void:
+	vista_lugar.inc = inc
+	vista_lugar.visible = true
+
+
+func ocultar_lugar(inc) -> void:
+	if vista_lugar.inc == inc:
+		vista_lugar.visible = false
 
 
 func set_velocidad(texto: String) -> void:
@@ -159,7 +322,7 @@ func notificar(texto: String, color: Color = Color("e8eef6")) -> void:
 	e.custom_minimum_size = Vector2(430, 0)
 	caja.add_child(e)
 	caja_notificaciones.add_child(caja)
-	while caja_notificaciones.get_child_count() > 4:
+	while caja_notificaciones.get_child_count() > 3:
 		var vieja := caja_notificaciones.get_child(0)
 		caja_notificaciones.remove_child(vieja)
 		vieja.queue_free()
@@ -170,10 +333,10 @@ func notificar(texto: String, color: Color = Color("e8eef6")) -> void:
 
 
 ## opciones: Array de Dictionary {"texto": String, "accion": Callable, "activo": bool (opcional)}
-func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: bool = false) -> void:
+func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: bool = false, pos_y: float = 90.0, ancho: float = 620.0) -> void:
 	if centrado:
-		panel_lateral.custom_minimum_size = Vector2(620, 0)
-		panel_lateral.position = Vector2(ANCHO / 2.0 - 310.0, 90)
+		panel_lateral.custom_minimum_size = Vector2(ancho, 0)
+		panel_lateral.position = Vector2(ANCHO / 2.0 - ancho / 2.0, pos_y)
 	else:
 		panel_lateral.custom_minimum_size = Vector2(460, 0)
 		panel_lateral.position = Vector2(ANCHO - 474.0, 64)
@@ -194,6 +357,8 @@ func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: boo
 			b.disabled = true
 			b.focus_mode = Control.FOCUS_NONE
 		panel_opciones.add_child(b)
+	scroll_opciones.custom_minimum_size = Vector2(0, minf(opciones.size() * 56.0, 400.0 if centrado else 330.0))
+	scroll_opciones.scroll_vertical = 0
 	panel_lateral.visible = true
 	call_deferred("_ajustar", panel_lateral)
 	if primero != null:
@@ -358,6 +523,7 @@ func _crear_tema() -> Theme:
 
 func _crear_barra_superior() -> void:
 	var barra := PanelContainer.new()
+	barra_superior = barra
 	barra.position = Vector2.ZERO
 	barra.custom_minimum_size = Vector2(ANCHO, 54)
 	barra.add_theme_stylebox_override("panel", _caja(Color(0.03, 0.07, 0.17, 0.95), 0, 10, Color.TRANSPARENT, 0))
@@ -373,6 +539,8 @@ func _crear_barra_superior() -> void:
 	etiqueta_pausa = _etiqueta("PAUSA", 24, Color("ffd166"))
 	etiqueta_pausa.visible = false
 	fila.add_child(etiqueta_pausa)
+	etiqueta_dinero = _etiqueta("", 24, Color("6ee7b7"))
+	fila.add_child(etiqueta_dinero)
 	etiqueta_velocidad = _etiqueta("Tiempo x1", 22, Color("9fb3c8"))
 	fila.add_child(etiqueta_velocidad)
 	etiqueta_reloj = _etiqueta("08:00", 28, Color.WHITE)
@@ -390,7 +558,7 @@ func _crear_mira() -> void:
 
 func _dibujar_mira() -> void:
 	var c := Vector2(30, 30)
-	var col := Color(1, 1, 1, 0.85)
+	var col := Color("9ff3ff") if modo_envio != "" else Color(1, 1, 1, 0.85)
 	mira.draw_arc(c, 20.0, 0.0, TAU, 32, col, 2.0)
 	mira.draw_line(c + Vector2(-30, 0), c + Vector2(-12, 0), col, 2.0)
 	mira.draw_line(c + Vector2(12, 0), c + Vector2(30, 0), col, 2.0)
@@ -536,8 +704,13 @@ func _crear_panel_lateral() -> void:
 	panel_texto = _etiqueta("", 20, Color("cfd9e6"))
 	panel_texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(panel_texto)
+	scroll_opciones = ScrollContainer.new()
+	scroll_opciones.follow_focus = true
+	scroll_opciones.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(scroll_opciones)
 	panel_opciones = VBoxContainer.new()
 	panel_opciones.add_theme_constant_override("separation", 8)
-	v.add_child(panel_opciones)
+	panel_opciones.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll_opciones.add_child(panel_opciones)
 	panel_lateral.visible = false
 	raiz.add_child(panel_lateral)

@@ -15,6 +15,32 @@ var servicio_necesario := "ambulancia"
 ## Servicios que hay que enviar (se dibujan como colores del hexágono)
 var servicios: Array = ["ambulancia"]
 var traslado := false          # la ambulancia lleva al herido al hospital
+# Mini evento "En el lugar"
+var categoria := "medico"       # medico, pelea, robo, fuego, busqueda, atrapado, control
+var requeridas: Dictionary = {} # servicio -> unidades necesarias
+var presentes: Dictionary = {}  # servicio -> unidades en el lugar
+var en_lugar: Array = []        # vehículos trabajando en el lugar
+var evento := ""                # "", en_curso, refuerzos, terminado
+var progreso := 0.0
+var duracion := 10.0
+var t_refuerzos := 0.0
+var refuerzo_pedido := false
+var exito := true
+var resultado := ""
+# Historias
+var historia = null             # datos de la historia (o null si es una emergencia normal)
+var desenlace := ""             # lo que pasa de verdad
+var variables: Dictionary = {}  # {lugar}, {calle}...
+var eventos_hechos: Array = []
+var cronologia: Array = []      # ["hh:mm", texto]
+var confirmados: Array = []
+var llamadas_relacionadas := 0
+var decision_pendiente := false
+var ajuste_estrellas := 0
+
+
+func registrar(hora: String, texto: String) -> void:
+	cronologia.append([hora, texto])
 var tiempo_intervencion := 10.0 # segundos en el lugar
 var informacion: Array = []
 var marcas: Array = []
@@ -62,6 +88,25 @@ func radio_visible() -> float:
 		1:
 			return radio_zona
 	return 0.0
+
+
+func unidades_que_faltan() -> int:
+	var total := 0
+	for sv in requeridas:
+		total += maxi(int(requeridas[sv]) - int(presentes.get(sv, 0)), 0)
+	return total
+
+
+func requeridas_cumplidas() -> bool:
+	return unidades_que_faltan() == 0
+
+
+func texto_requeridas() -> String:
+	var partes := []
+	var nombres := {"ambulancia": "Ambulancia", "policia": "Policía", "bomberos": "Bomberos"}
+	for sv in requeridas:
+		partes.append("%s %d/%d" % [nombres.get(sv, sv), int(presentes.get(sv, 0)), int(requeridas[sv])])
+	return ", ".join(PackedStringArray(partes))
 
 
 func texto_precision() -> String:
@@ -161,6 +206,14 @@ func _draw() -> void:
 	var borde := hex.duplicate()
 	borde.append(hex[0])
 	draw_polyline(borde, Color.WHITE, 2.5 * s)
+	# Refuerzos pedidos: "+N" parpadeando junto al hexágono
+	var faltan := unidades_que_faltan()
+	if faltan > 0 and (evento == "refuerzos" or evento == ""):
+		var vis := evento == "" or int(_t * 3.0) % 2 == 0
+		if vis:
+			var pos_marca := centro + Vector2(radio + 4.0 * s, -radio)
+			draw_circle(pos_marca, 13.0 * s, Color("ffd166"))
+			draw_string(f, pos_marca + Vector2(-13, 6) * s, "+%d" % faltan, HORIZONTAL_ALIGNMENT_CENTER, 26 * s, int(16 * s), Color("0a1430"))
 	if seleccionado:
 		var grande := PackedVector2Array()
 		for p in borde:

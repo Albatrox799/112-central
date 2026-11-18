@@ -20,6 +20,11 @@ func _ready() -> void:
 	_boton("depuracion", JOY_BUTTON_BACK, [KEY_F1])
 	_boton("categoria_anterior", JOY_BUTTON_LEFT_SHOULDER, [KEY_Q])
 	_boton("categoria_siguiente", JOY_BUTTON_RIGHT_SHOULDER, [KEY_R])
+	# Moverse por las listas de los menús (cruceta o joystick)
+	_boton("nav_abajo", JOY_BUTTON_DPAD_DOWN, [KEY_DOWN])
+	_boton("nav_arriba", JOY_BUTTON_DPAD_UP, [KEY_UP])
+	_eje("nav_abajo", JOY_AXIS_LEFT_Y, 1.0, [])
+	_eje("nav_arriba", JOY_AXIS_LEFT_Y, -1.0, [])
 
 	# Acciones con ejes (joystick izquierdo y gatillos)
 	_eje("mover_izquierda", JOY_AXIS_LEFT_X, -1.0, [KEY_A, KEY_LEFT])
@@ -48,7 +53,49 @@ func cargar_configuracion() -> bool:
 	if sel < 0 or can < 0:
 		return false
 	aplicar_botones(sel, can)
+	var abajo: Dictionary = cfg.get_value("mando", "nav_abajo", {})
+	var arriba: Dictionary = cfg.get_value("mando", "nav_arriba", {})
+	if abajo.is_empty() or arriba.is_empty():
+		return false   # falta configurar la cruceta
+	aplicar_navegacion(abajo, arriba)
 	return true
+
+
+## La cruceta puede llegar como botón o como eje según el mando y el sistema.
+## dato = {"tipo": "boton", "indice": 12} o {"tipo": "eje", "indice": 7, "valor": 1.0}
+func guardar_navegacion(abajo: Dictionary, arriba: Dictionary) -> void:
+	aplicar_navegacion(abajo, arriba)
+	var cfg := ConfigFile.new()
+	cfg.load(RUTA_CONFIG)
+	cfg.set_value("mando", "nav_abajo", abajo)
+	cfg.set_value("mando", "nav_arriba", arriba)
+	cfg.save(RUTA_CONFIG)
+
+
+func aplicar_navegacion(abajo: Dictionary, arriba: Dictionary) -> void:
+	for par in [["nav_abajo", abajo], ["nav_arriba", arriba], ["ui_down", abajo], ["ui_up", arriba]]:
+		var accion: String = par[0]
+		var dato: Dictionary = par[1]
+		if not InputMap.has_action(accion):
+			continue
+		var e: InputEvent
+		if dato.get("tipo", "") == "tecla":
+			var k := InputEventKey.new()
+			k.keycode = int(dato["indice"])
+			e = k
+		elif dato.get("tipo", "") == "eje":
+			var m := InputEventJoypadMotion.new()
+			m.axis = int(dato["indice"])
+			m.axis_value = float(dato["valor"])
+			m.device = -1
+			e = m
+		else:
+			var b := InputEventJoypadButton.new()
+			b.button_index = int(dato.get("indice", 0))
+			b.device = -1
+			e = b
+		if not InputMap.action_has_event(accion, e):
+			InputMap.action_add_event(accion, e)
 
 
 func guardar_configuracion(sel: int, can: int) -> void:
