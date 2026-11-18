@@ -39,13 +39,30 @@ jobs:
 
       - name: Exportar el APK
         env:
-          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: /root/debug.keystore
           GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
           GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
+          # Firma SIEMPRE con la misma clave (carpeta "firma"), para que el Fire TV
+          # deje actualizar el juego encima sin desinstalarlo ni perder la partida
+          export GODOT_ANDROID_KEYSTORE_DEBUG_PATH="$PWD/firma/central112.keystore"
+          # Cada versión lleva un número mayor que la anterior
+          sed -i "s/^version\/code=.*/version\/code=${GITHUB_RUN_NUMBER}/" export_presets.cfg
+          grep "version/code" export_presets.cfg
           mkdir -v -p build
           godot --headless --verbose --export-debug "Fire TV (Android)" build/${EXPORT_NAME}.apk
           ls -la build
+          test -s build/${EXPORT_NAME}.apk
+
+      - name: Firmar el APK con la clave fija y comprobarlo
+        run: |
+          # Se firma aquí también, por si Godot no lo ha hecho: un APK sin firma
+          # da "App no instalada" en el Fire TV.
+          APKSIGNER=$(find /usr /opt /root /android -name apksigner -type f 2>/dev/null | head -n 1)
+          echo "apksigner: $APKSIGNER"
+          if [ -z "$APKSIGNER" ]; then echo "No se encuentra apksigner"; exit 1; fi
+          "$APKSIGNER" sign --ks firma/central112.keystore --ks-type PKCS12 --ks-pass pass:android \
+            --key-pass pass:android --ks-key-alias androiddebugkey build/${EXPORT_NAME}.apk
+          "$APKSIGNER" verify --verbose --print-certs build/${EXPORT_NAME}.apk
 
       - name: Guardar el APK (pestaña Actions)
         uses: actions/upload-artifact@v4
