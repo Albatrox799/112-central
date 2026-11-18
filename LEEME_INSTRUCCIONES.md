@@ -28,6 +28,18 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 0.98
+
+- **Nombres de las unidades:** ya no salen códigos como P-01, sino «Coche patrulla 1», «Moto 1», «Ambulancia 2», «Autobomba 1»…
+- **Unidad de Intervención Especial (GEO)**, en la tienda a partir del rango «Operador/a veterano/a»: Blindado GEO (personas armadas, atrincherados, rehenes), Furgón antidisturbios (peleas multitudinarias y bandas), TEDAX (bombas y paquetes sospechosos) y, desde el rango siguiente, Mando táctico (acelera a todas las unidades del aviso).
+- **UME**, a partir del rango siguiente: NRBQ (químicos y nubes tóxicas), autobomba forestal pesada, rescate en derrumbes y anfibio con bombas de achique.
+- **Equipo especial:** fusiles y escudos balísticos, escudos antidisturbios y botes de humo, traje y robot TEDAX, dron térmico, perro detector de explosivos, trajes NRBQ, geófono y bombas de achique.
+- **Bases a las afueras** del pueblo para el GEO y la UME. No patrullan: esperan en la base hasta que los mandas. **Mantenerlos es barato** (40 € por persona y turno).
+- Si mandas el blindado a una pelea normal, los vecinos lo critican y baja un poco la reputación.
+- **Historias nuevas:** riada, incendio forestal en el Monte de San Isidro, camión de productos químicos volcado, nevada histórica, derrumbe de un edificio, paquete sospechoso, amenaza de bomba (si la llamada se corta, se rastrea), atrincherado con rehenes, batalla campal, atraco a un banco y un gran atentado (muy raro). Las de bombas y el atentado solo salen si tienes GEO. Si no tienes UME o GEO, los avisos no los piden y los resuelven los demás, aunque peor.
+- **Policía Judicial (detectives):** en la tienda desde el rango «Operador/a». Las denuncias de robos, estafas o agresiones se pueden pasar a los detectives. Cada caso tiene tres pasos (entrevistas, cámaras, huellas, vecinos, vigilancias…): cada uno es un aviso al que mandas su coche y da una pista. Con las pistas eliges a quién acusar entre tres sospechosos. Si aciertas, hay detención, dinero y titular; si fallas, el caso se archiva y el ladrón puede volver a actuar. Algunos robos son de una banda y acaban en redada. Los casos están en la comisaría (cruceta izquierda) y se guardan de un turno a otro.
+- El refuerzo externo de bomberos ahora es del **Consorcio Provincial** (la UME ya es tuya).
+
 ## Novedades de la versión 0.97
 
 - **Velocidades:** en emergencia, con sirenas, todas las unidades van al 120 %. Volviendo a la base o del hospital, al 100 %. Patrullando, igual que antes. Coche patrulla, camuflado, unidad canina, furgón y moto de policía son más rápidos (la moto sigue siendo la más rápida).

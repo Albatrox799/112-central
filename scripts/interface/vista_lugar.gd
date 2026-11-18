@@ -17,6 +17,7 @@ const ROPA := {
 	"civil": Color("48a9a6"), "sospechoso": Color("ff6b9a"), "herido": Color("9aa5b1"),
 	"nino": Color("ffd166"), "forense": Color("ecf0f1"), "funeraria": Color("2d3436"),
 	"proteccion_civil": Color("ff8c1a"),
+	"geo": Color("2b3038"), "ume": Color("6b7a3a"), "judicial": Color("6a5a4c"),
 }
 const PIEL := Color("f1c9a5")
 
@@ -129,6 +130,7 @@ func _draw() -> void:
 		_:
 			_escena_medica()
 	_escena_proteccion_civil()
+	_escena_especiales()
 	for u in _unidades:
 		if u.get("tipo", "") == "pma":
 			_carpa_pma()
@@ -789,6 +791,40 @@ func _escena_proteccion_civil() -> void:
 		_persona(pos, "proteccion_civil", "andar" if _andando(puerta, sitio, 0.2 + i * 0.3) else "trafico", _t * 3.0, 1.0 if sitio.x < 300 else -1.0)
 
 
+## GEO, UME y detectives en el lugar (0.98)
+func _escena_especiales() -> void:
+	var sitios := {
+		"geo": [Vector2(380, Y_ACERA + 4), Vector2(404, Y_ACERA + 2), Vector2(428, Y_ACERA + 4), Vector2(452, Y_ACERA + 2)],
+		"ume": [Vector2(150, Y_ACERA + 4), Vector2(176, Y_ACERA + 2), Vector2(202, Y_ACERA + 4)],
+		"judicial": [Vector2(120, Y_ACERA + 2), Vector2(142, Y_ACERA + 4)],
+	}
+	for sv in sitios:
+		var n := _gente(sv)
+		if n == 0:
+			continue
+		var puerta := Vector2.ZERO
+		for k in _puerta_serv:
+			if _puerta_serv[k] == sv:
+				puerta = k
+		var lista: Array = sitios[sv]
+		for i in mini(n + (1 if sv == "geo" else 0), lista.size()):
+			var sitio: Vector2 = lista[i]
+			var pos := _entrar(puerta, sitio, 0.2 + i * 0.25) if puerta != Vector2.ZERO else sitio
+			var andando := puerta != Vector2.ZERO and _andando(puerta, sitio, 0.2 + i * 0.25)
+			var pose := "andar" if andando else "pie"
+			if not andando:
+				if sv == "ume":
+					pose = "agachado" if i % 2 == 0 else "trafico"
+				elif sv == "judicial":
+					pose = "multa"
+			_persona(pos, sv, pose, _t * 6.0 + i, -1.0 if sitio.x > 300 else 1.0)
+			# Escudo de los agentes especiales
+			if sv == "geo" and not andando:
+				draw_rect(Rect2(pos + Vector2(-9, -24), Vector2(5, 18)), Color(0.55, 0.65, 0.78, 0.8))
+		if sv == "judicial" and n > 0:
+			_bocadillo(lista[0] + Vector2(0, -40), "Anotamos pistas…")
+
+
 ## Policía (u otros) de apoyo alrededor de un paciente: aseguran la zona o,
 ## si son los primeros en llegar, tranquilizan y atienden hasta que llegue la ambulancia.
 func _apoyo_alrededor(centro: Vector2, puertas: Dictionary, primera_respuesta: bool) -> void:
@@ -907,6 +943,17 @@ func _persona(p: Vector2, tipo: String, pose: String = "pie", fase: float = 0.0,
 			draw_rect(Rect2(cabeza + Vector2(1, -3.5), Vector2(4.5, 1.5)), Color("152a55"))
 		"bomberos":
 			draw_arc(cabeza + Vector2(0, -1), 5.0, PI, TAU, 10, Color("f1c40f"), 3.0)
+		"geo":
+			# Casco negro con visera y fusil cruzado
+			draw_arc(cabeza + Vector2(0, -1), 5.2, PI, TAU, 10, Color("15181d"), 3.5)
+			draw_line(cabeza + Vector2(-4, 1), cabeza + Vector2(4, 1), Color("3d4a5c"), 2.0)
+			draw_line(hombro + Vector2(-6, 10), hombro + Vector2(7, -1), Color("101216"), 2.5)
+		"ume":
+			draw_arc(cabeza + Vector2(0, -1), 5.0, PI, TAU, 10, Color("4b5a2a"), 3.5)
+			draw_rect(Rect2(hombro + Vector2(-4, 2), Vector2(8, 3)), Color("d4a017"))
+		"judicial":
+			draw_arc(cabeza + Vector2(0, -1), 4.0, PI, TAU, 8, Color("2d2016"), 2.5)
+			draw_line(hombro + Vector2(-2, 2), hombro + Vector2(-1, 10), Color("c0c6cf"), 1.5)
 		"ambulancia":
 			draw_line(hombro + Vector2(-3, 4), hombro + Vector2(3, 4), Color("2ecc71"), 2.0)
 		"sospechoso":
@@ -954,6 +1001,28 @@ func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: 
 			draw_rect(Rect2(-30, -17, 60, 5), Color("ff8c1a"))
 			draw_rect(Rect2(-12, -27, 10, 8), Color("1e3a8a"))
 			_luces(Vector2(-20, -32), Vector2(6, -32), luces)
+		"geo":
+			# Blindado negro, alto, con ventanas pequeñas
+			draw_rect(Rect2(-34, -34, 64, 29), Color("23272e"))
+			draw_rect(Rect2(-34, -38, 40, 5), Color("2f343c"))
+			draw_rect(Rect2(14, -30, 12, 7), Color("6f8aa8"))
+			draw_rect(Rect2(-26, -30, 8, 6), Color("6f8aa8"))
+			draw_rect(Rect2(-34, -14, 64, 3), Color("b8c2d6"))
+			draw_string(fuente, Vector2(-22, -17), "GEO", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e0e6ef"))
+			_luces(Vector2(-10, -40), Vector2(4, -40), luces)
+		"ume":
+			# Camión militar color arena con banda amarilla
+			draw_rect(Rect2(-38, -36, 52, 31), Color("7a7f4a"))
+			draw_rect(Rect2(14, -28, 22, 23), Color("6b7040"))
+			draw_rect(Rect2(18, -25, 12, 9), Color("9cc9ff"))
+			draw_rect(Rect2(-38, -16, 74, 4), Color("d4a017"))
+			draw_string(fuente, Vector2(-30, -22), "UME", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("f5e6a8"))
+			_luces(Vector2(20, -31), Vector2(32, -31), luces)
+		"judicial":
+			draw_rect(Rect2(-28, -17, 56, 12), Color("4a4f5a"))
+			draw_rect(Rect2(-14, -26, 26, 10), Color("4a4f5a"))
+			draw_rect(Rect2(-11, -24, 9, 6), Color("9cc9ff"))
+			draw_rect(Rect2(1, -24, 9, 6), Color("9cc9ff"))
 		"funeraria":
 			draw_rect(Rect2(-34, -24, 62, 19), Color("2d3436"))
 			draw_rect(Rect2(-34, -30, 40, 7), Color("2d3436"))
@@ -964,7 +1033,7 @@ func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: 
 			draw_rect(Rect2(-14, -26, 26, 10), Color("8a8f99"))
 			draw_rect(Rect2(-11, -24, 9, 6), Color("9cc9ff"))
 			draw_rect(Rect2(1, -24, 9, 6), Color("9cc9ff"))
-	var x_ruedas := [-18.0, 18.0] if servicio != "bomberos" else [-24.0, 0.0, 24.0]
+	var x_ruedas := [-18.0, 18.0] if not servicio in ["bomberos", "ume", "geo"] else [-24.0, 0.0, 24.0]
 	for x in x_ruedas:
 		draw_circle(Vector2(x, -5), 5.5, rueda)
 		draw_circle(Vector2(x, -5), 2.2, Color("5a6170"))

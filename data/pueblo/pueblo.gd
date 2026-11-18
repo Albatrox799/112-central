@@ -48,6 +48,7 @@ const LOGROS := {
 	"cien": {"nombre": "Cien emergencias", "desc": "Resuelve 100 emergencias."},
 	"flota": {"nombre": "Gran flota", "desc": "Ten 10 vehículos o más."},
 	"denuncias": {"nombre": "Atención al ciudadano", "desc": "Tramita 5 denuncias en la comisaría."},
+	"detective": {"nombre": "Detective", "desc": "Resuelve un caso de la Policía Judicial."},
 	"persecucion": {"nombre": "Ni un ladrón suelto", "desc": "Detén a los ladrones tras una persecución."},
 	"detenciones": {"nombre": "Calabozo lleno", "desc": "Lleva 10 detenidos al calabozo de la comisaría."},
 	"redada": {"nombre": "Operación Polígono", "desc": "Completa la redada contra el narcotráfico."},

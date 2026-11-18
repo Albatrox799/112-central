@@ -19,6 +19,9 @@ const NOMBRES_SERVICIO := {
 	"policia": "Policía Local",
 	"bomberos": "Bomberos (autobomba)",
 	"sospechoso": "Vehículo sospechoso",
+	"geo": "Unidad de Intervención Especial (GEO)",
+	"ume": "UME (Unidad Militar de Emergencias)",
+	"judicial": "Policía Judicial",
 }
 const FACTOR_SIN_EMERGENCIA := 0.45
 const FACTOR_SIRENAS := 1.2      # en emergencia van al 120 % de su velocidad
@@ -37,7 +40,7 @@ var equipo: Array = []       # equipo comprado para este vehículo
 var bono := ""
 var indice_flota := -1
 var servicios_seguidos := 0  # servicios hechos sin pasar por la base
-const LIMITE_SEGUIDOS := {"ambulancia": 3, "bomberos": 3, "policia": 99, "proteccion_civil": 99}
+const LIMITE_SEGUIDOS := {"ambulancia": 3, "bomberos": 3, "policia": 99, "proteccion_civil": 99, "geo": 99, "ume": 4, "judicial": 99}
 var cansancio := 0.0          # 0-100: sube con cada servicio y baja descansando en la base
 var formacion := 0            # cursos de formación (0-2): trabajan más rápido
 var externo := false          # Guardia Civil o UME: vienen de fuera y se van al terminar
@@ -261,6 +264,9 @@ const COLORES_PLACA := {
 	"policia": [Color("3b8eea"), Color("ffffff")],      # placa azul
 	"bomberos": [Color("d64545"), Color("ffffff")],     # placa roja
 	"sospechoso": [Color("ff4d6d"), Color("1a0a10")],
+	"geo": [Color("2b3240"), Color("ffffff")],          # negro, letras blancas
+	"ume": [Color("d4a017"), Color("1e1e1e")],          # amarillo UME
+	"judicial": [Color("6c5a7a"), Color("ffffff")],     # coche sin distintivos
 }
 const COLORES_ESTADO := {
 	"Disponible": Color("2ecc71"), "En desplazamiento": Color("f39c12"),
@@ -302,8 +308,8 @@ func _draw() -> void:
 	elif parpadeo:
 		draw_rect(placa.grow(3.0), Color("ff4d6d"), false, 2.0)
 	if id_unidad != "":
-		draw_string_outline(f, Vector2(-60, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 120, 15, 4, Color("0a1430"))
-		draw_string(f, Vector2(-60, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 120, 15, Color.WHITE)
+		draw_string_outline(f, Vector2(-90, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, 4, Color("0a1430"))
+		draw_string(f, Vector2(-90, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color.WHITE)
 
 
 ## Silueta lateral del vehículo dentro de la placa (mira hacia donde circula).

@@ -60,6 +60,7 @@ var t_ambulancia := -1.0        # cuenta atrás si los heridos esperan una ambul
 var esperando_ambulancia := false
 var refuerzos_avisados: Dictionary = {}   # servicio -> unidades ya pedidas por radio
 var escapado := false
+var caso_id := ""               # investigación de la Policía Judicial a la que pertenece
 
 
 ## Unidades que siguen de verdad en el lugar.
@@ -152,7 +153,8 @@ func requeridas_cumplidas() -> bool:
 
 func texto_requeridas() -> String:
 	var partes := []
-	var nombres := {"ambulancia": "Ambulancia", "policia": "Policía", "bomberos": "Bomberos"}
+	var nombres := {"ambulancia": "Ambulancia", "policia": "Policía", "bomberos": "Bomberos", "proteccion_civil": "Protección Civil",
+		"geo": "GEO", "ume": "UME", "judicial": "Detectives"}
 	for sv in requeridas:
 		partes.append("%s %d/%d" % [nombres.get(sv, sv), int(presentes.get(sv, 0)), int(requeridas[sv])])
 	return ", ".join(PackedStringArray(partes))
@@ -211,8 +213,11 @@ const COLOR_SERVICIO := {
 	"ambulancia": [Color("f2f6fc"), Color("d63031")],   # blanco
 	"policia": [Color("3b8eea"), Color("ffffff")],      # azul
 	"bomberos": [Color("d64545"), Color("ffffff")],     # rojo
+	"geo": [Color("2b3240"), Color("ffffff")],          # negro
+	"ume": [Color("d4a017"), Color("1e1e1e")],          # amarillo
+	"judicial": [Color("8e6bb0"), Color("ffffff")],     # morado
 }
-const ORDEN_SERVICIOS := ["ambulancia", "policia", "bomberos"]
+const ORDEN_SERVICIOS := ["ambulancia", "policia", "bomberos", "geo", "ume", "judicial"]
 
 
 func _draw() -> void:
@@ -302,6 +307,21 @@ func _dibujar_simbolo(servicio: String, c: Vector2, col: Color, s: float) -> voi
 				c + Vector2(3, 9) * s, c + Vector2(-3, 9) * s, c + Vector2(-7, 4) * s,
 				c + Vector2(-5, -3) * s, c + Vector2(-2, 1) * s])
 			draw_colored_polygon(llama, col)
+		"geo":
+			# Diana: unidad especial
+			draw_arc(c, 8.0 * s, 0.0, TAU, 16, col, 2.5 * s)
+			draw_line(c + Vector2(-11, 0) * s, c + Vector2(11, 0) * s, col, 2.0 * s)
+			draw_line(c + Vector2(0, -11) * s, c + Vector2(0, 11) * s, col, 2.0 * s)
+		"ume":
+			var estrella := PackedVector2Array()
+			for k in 10:
+				var rr := (10.0 if k % 2 == 0 else 4.5) * s
+				estrella.append(c + Vector2.from_angle(-PI / 2.0 + k * TAU / 10.0) * rr)
+			draw_colored_polygon(estrella, col)
+		"judicial":
+			# Lupa
+			draw_arc(c + Vector2(-2, -2) * s, 6.0 * s, 0.0, TAU, 16, col, 2.5 * s)
+			draw_line(c + Vector2(2, 2) * s, c + Vector2(9, 9) * s, col, 3.0 * s)
 
 
 func _dibujar_fuego() -> void:
