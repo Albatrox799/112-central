@@ -57,6 +57,10 @@ var ll_scroll_opciones: ScrollContainer
 var _seguro_nav := {"abajo": false, "arriba": false}
 var etiqueta_comisaria: Label
 var ll_precision: Control
+var ll_rastreo: Control          # «LOCALIZANDO…» con un radar que se cierra
+var _rastreo_texto := ""
+var _rastreo_dur := 0.0          # >0: localizando; -1: ya localizada
+var _rastreo_t := 0.0
 var icono_llamada: Control
 var tecleo: AudioStreamPlayer
 var pestana_llamada := 0
@@ -171,7 +175,7 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.96.2", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.97", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
 
 
 # ---------------------------------------------------------------- PANTALLA DE CARGA
@@ -480,6 +484,9 @@ func _process(delta: float) -> void:
 			_t_duracion += real
 		ll_duracion.text = "%02d:%02d" % [int(_t_duracion) / 60, int(_t_duracion) % 60]
 		ll_luz.queue_redraw()
+		_rastreo_t += real
+		if ll_rastreo.visible:
+			ll_rastreo.queue_redraw()
 		_avanzar_texto(real)
 		caja_notificaciones.position = Vector2(ANCHO - 460.0, 66)
 	else:
@@ -1088,6 +1095,11 @@ func _crear_ventana_llamada() -> void:
 	ll_cabecera = _etiqueta("", 16, Color("9fc7e8"))
 	ll_cabecera.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(ll_cabecera)
+	ll_rastreo = Control.new()
+	ll_rastreo.custom_minimum_size = Vector2(ANCHO_LLAMADA - 40, 28)
+	ll_rastreo.draw.connect(_dibujar_rastreo)
+	ll_rastreo.visible = false
+	v.add_child(ll_rastreo)
 	# Pestañas
 	var pest := HBoxContainer.new()
 	pest.add_theme_constant_override("separation", 6)
@@ -1179,6 +1191,53 @@ func _elegir_pestana(i: int) -> void:
 		if foco != null:
 			foco.release_focus()
 	call_deferred("_ajustar", ventana_llamada)
+
+
+## Localización automática de la llamada (dur > 0: localizando; dur < 0: hecha).
+func set_localizando(texto: String, dur: float) -> void:
+	_rastreo_texto = texto
+	_rastreo_dur = dur
+	_rastreo_t = 0.0
+	ll_rastreo.visible = texto != ""
+	ll_rastreo.queue_redraw()
+
+
+func actualizar_localizacion(localizacion: String, precision: int) -> void:
+	ll_localizacion.text = "Localización: " + localizacion
+	precision_llamada = precision
+	ll_precision.queue_redraw()
+
+
+func actualizar_datos(info: Array) -> void:
+	var datos := "· ninguno todavía"
+	if info.size() > 0:
+		datos = ""
+		for i in info.size():
+			datos += ("" if i == 0 else "\n") + "· " + str(info[i])
+	ll_info.text = "Datos obtenidos:\n" + datos
+
+
+func _dibujar_rastreo() -> void:
+	var f := ThemeDB.fallback_font
+	var c := Vector2(14, 14)
+	var hecho := _rastreo_dur < 0.0 or _rastreo_t >= _rastreo_dur
+	var col := Color("3ddc84") if hecho else Color("ffd166")
+	ll_rastreo.draw_rect(Rect2(0, 0, ll_rastreo.size.x, 28), Color(col, 0.08))
+	ll_rastreo.draw_arc(c, 11.0, 0.0, TAU, 24, col, 2.0)
+	if hecho:
+		ll_rastreo.draw_circle(c, 4.0, col)
+	else:
+		var k := fmod(_rastreo_t * 1.6, 1.0)
+		ll_rastreo.draw_arc(c, 11.0 * (1.0 - k), 0.0, TAU, 20, Color(col, 1.0 - k), 2.0)
+		ll_rastreo.draw_line(c, c + Vector2.from_angle(_rastreo_t * 5.0) * 11.0, col, 2.0)
+	var texto := _rastreo_texto
+	if not hecho:
+		texto += ".".repeat(int(_rastreo_t * 3.0) % 4)
+	ll_rastreo.draw_string(f, Vector2(32, 20), texto, HORIZONTAL_ALIGNMENT_LEFT, ll_rastreo.size.x - 150, 16, col)
+	if not hecho and _rastreo_dur > 0.0:
+		var barra := Rect2(ll_rastreo.size.x - 110, 10, 100, 8)
+		ll_rastreo.draw_rect(barra, Color("13283a"))
+		ll_rastreo.draw_rect(Rect2(barra.position, Vector2(barra.size.x * clampf(_rastreo_t / _rastreo_dur, 0.0, 1.0), barra.size.y)), col)
 
 
 ## Barra de precisión de la localización: 4 tramos, del desconocido al punto exacto.

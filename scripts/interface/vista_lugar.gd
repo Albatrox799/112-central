@@ -381,7 +381,7 @@ func _escena_fuego() -> void:
 	var exito: bool = inc.exito
 	var edificio := Rect2(320, 92, 180, Y_ACERA - 92)
 	var fuego: float = (1.0 - p) * (0.35 + 0.18 * int(inc.intensidad))
-	if inc.evento == "refuerzos" or inc.evento == "":
+	if inc.evento == "":
 		fuego = 0.5 + 0.12 * int(inc.intensidad)
 	if fin:
 		fuego = 0.0 if exito else 0.55
@@ -483,7 +483,9 @@ func _escena_pelea() -> void:
 			var hacia_coche := sp.lerp(puerta_pol + Vector2(10 + i * 8.0, 0), lleva_k)
 			if lleva_k < 1.0:
 				_persona(hacia_coche, "sospechoso", "esposado", _t * 6.0 if lleva_k > 0.0 else 0.0, -1.0)
-	# Un herido en el suelo
+	# Un herido en el suelo (con sangre si es grave)
+	if inc.requeridas.has("ambulancia") or float(inc.t_ambulancia) >= 0.0:
+		_sangre(Vector2(254, Y_ACERA + 12), 1.0 + p * 0.4)
 	_persona(Vector2(250, Y_ACERA + 10), "herido", "tumbado")
 	var n_pol := _gente("policia")
 	for i in mini(n_pol, 4):
@@ -720,6 +722,16 @@ func _escena_tramites() -> void:
 		if fin:
 			salida = minf(_t_fin * 120.0, 300.0)
 		_vehiculo(furgon + Vector2(salida, 0), "funeraria", -1.0, false)
+	if String(inc.categoria) in ["pelea", "robo", "atrapado", "fuego"]:
+		_sangre(cuerpo + Vector2(4, 4), 1.4)
+	# Un familiar llorando al que consuela un agente o un sanitario
+	var familiar := Vector2(110, Y_ACERA + 6)
+	if not fin:
+		_persona(familiar, "civil", "sentado", 0.0, 1.0)
+		if int(_t * 0.8) % 3 != 0:
+			_bocadillo(familiar + Vector2(0, -34), "(llora)" if int(_t * 0.5) % 2 == 0 else "¡No puede ser!")
+		if _gente("policia") > 1 or paso >= 1:
+			_persona(familiar + Vector2(22, 0), "policia" if _gente("policia") > 1 else "forense", "pie", 0.0, -1.0)
 	if levantamiento < 1.0:
 		if levantamiento <= 0.0:
 			_persona(cuerpo, "herido", "tumbado")
@@ -1138,6 +1150,13 @@ func _humo_suave(p: Vector2) -> void:
 		draw_circle(p + Vector2(fase * 12.0, -fase * 40.0), 6.0 + fase * 10.0, Color(0.55, 0.55, 0.58, 0.4 * (1.0 - fase)))
 
 
+## Charco de sangre en el suelo (escenas duras).
+func _sangre(c: Vector2, tam: float) -> void:
+	_elipse(c, 16.0 * tam, 4.5 * tam, Color(0.45, 0.02, 0.04, 0.85))
+	_elipse(c + Vector2(10, 2) * tam, 7.0 * tam, 2.5 * tam, Color(0.55, 0.03, 0.05, 0.8))
+	_elipse(c + Vector2(-12, 1) * tam, 4.0 * tam, 1.6 * tam, Color(0.35, 0.01, 0.03, 0.8))
+
+
 func _elipse(c: Vector2, rx: float, ry: float, color: Color) -> void:
 	var pts := PackedVector2Array()
 	for k in 12:
@@ -1177,9 +1196,13 @@ func _carteles() -> void:
 		"tramites", "tramites_espera":
 			texto = "TRÁMITES JUDICIALES"
 			color = Color("cfd9e6")
-		"refuerzos":
-			if int(_t * 3.0) % 2 == 0:
-				texto = "¡PIDEN REFUERZOS!"
+		"refuerzos", "en_curso":
+			if float(inc.t_ambulancia) >= 0.0:
+				if int(_t * 3.0) % 2 == 0:
+					texto = "¡HERIDO: FALTA AMBULANCIA!"
+					color = Color("ff6b6b")
+			elif int(inc.faltan_apoyo()) > 0 and int(_t * 1.5) % 2 == 0:
+				texto = "PIDEN REFUERZOS (opcional)"
 				color = Color("ffd166")
 		"decision":
 			texto = "ESPERAN TUS ÓRDENES"
@@ -1199,11 +1222,14 @@ func _dibujar_estado() -> void:
 	var texto := ""
 	var color := Color("e2f0ff")
 	match String(inc.evento):
-		"en_curso":
+		"en_curso", "refuerzos":
 			texto = "Interviniendo... %d%%" % int(float(inc.progreso) * 100.0)
-		"refuerzos":
-			texto = "Faltan: %s · %d s" % [inc.texto_requeridas(), int(ceil(float(inc.t_refuerzos)))]
-			color = Color("ffd166") if int(_t * 3.0) % 2 == 0 else Color("ff6b6b")
+			if float(inc.t_ambulancia) >= 0.0:
+				texto = "Herido esperando ambulancia · %d s" % int(ceil(float(inc.t_ambulancia)))
+				color = Color("ffd166") if int(_t * 3.0) % 2 == 0 else Color("ff6b6b")
+			elif int(inc.faltan_apoyo()) > 0:
+				texto += " · más lento sin refuerzos (%s)" % inc.texto_requeridas()
+				color = Color("ffd166")
 		"decision":
 			texto = "Esperando órdenes de la central..."
 			color = Color("9ff3ff")

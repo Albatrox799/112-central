@@ -11,16 +11,16 @@ const PRECIO_CONTRATAR := 2000       # coste de fichar a una persona
 const TURNOS_BAJA := 2               # turnos que un herido está de baja
 
 const VEHICULOS := {
-	"patrulla": {"nombre": "Coche patrulla", "servicio": "policia", "velocidad": 65.0, "plazas": 2, "precio": 18000, "bono": ""},
-	"moto": {"nombre": "Moto de policía", "servicio": "policia", "velocidad": 80.0, "plazas": 1, "precio": 9000, "bono": "rapida"},
-	"furgon": {"nombre": "Furgón policial", "servicio": "policia", "velocidad": 55.0, "plazas": 4, "precio": 30000, "bono": "detenidos"},
+	"patrulla": {"nombre": "Coche patrulla", "servicio": "policia", "velocidad": 75.0, "plazas": 2, "precio": 18000, "bono": ""},
+	"moto": {"nombre": "Moto de policía", "servicio": "policia", "velocidad": 92.0, "plazas": 1, "precio": 9000, "bono": "rapida"},
+	"furgon": {"nombre": "Furgón policial", "servicio": "policia", "velocidad": 62.0, "plazas": 4, "precio": 30000, "bono": "detenidos"},
 	"ambulancia_b": {"nombre": "Ambulancia básica", "servicio": "ambulancia", "velocidad": 55.0, "plazas": 2, "precio": 40000, "bono": ""},
 	"ambulancia_sva": {"nombre": "Ambulancia de soporte vital avanzado", "servicio": "ambulancia", "velocidad": 60.0, "plazas": 3, "precio": 65000, "bono": "medico"},
 	"autobomba": {"nombre": "Autobomba", "servicio": "bomberos", "velocidad": 45.0, "plazas": 4, "precio": 120000, "bono": ""},
 	"escalera": {"nombre": "Camión escalera", "servicio": "bomberos", "velocidad": 40.0, "plazas": 3, "precio": 150000, "bono": "altura"},
 	"rescate": {"nombre": "Unidad de rescate", "servicio": "bomberos", "velocidad": 55.0, "plazas": 3, "precio": 90000, "bono": "rescate"},
-	"camuflado": {"nombre": "Coche camuflado", "servicio": "policia", "velocidad": 70.0, "plazas": 2, "precio": 26000, "bono": "camuflado"},
-	"canina": {"nombre": "Unidad canina", "servicio": "policia", "velocidad": 60.0, "plazas": 2, "precio": 24000, "bono": "canino"},
+	"camuflado": {"nombre": "Coche camuflado", "servicio": "policia", "velocidad": 80.0, "plazas": 2, "precio": 26000, "bono": "camuflado"},
+	"canina": {"nombre": "Unidad canina", "servicio": "policia", "velocidad": 70.0, "plazas": 2, "precio": 24000, "bono": "canino"},
 	"vir": {"nombre": "VIR (vehículo de intervención rápida)", "servicio": "ambulancia", "velocidad": 78.0, "plazas": 2, "precio": 35000, "bono": "vir"},
 	"moto_sanitaria": {"nombre": "Moto sanitaria", "servicio": "ambulancia", "velocidad": 85.0, "plazas": 1, "precio": 15000, "bono": "moto_sanitaria"},
 	"pma": {"nombre": "Puesto Médico Avanzado", "servicio": "ambulancia", "velocidad": 40.0, "plazas": 4, "precio": 80000, "bono": "pma"},

@@ -34,6 +34,7 @@ var meteo: Node2D
 var _farolas: Array = []      # [pos, umbral]
 var _encendidas := -1
 var _burbujas: Array = []     # {nodo, texto, color, vida}
+var _rastreos: Array = []     # {id, pos, r0, r1, t, dur, texto, vida}: localización de llamadas
 var _gotas: Array = []        # [x, y, velocidad]
 var _niebla: Array = []       # [pos, radio, velocidad]
 var _t := 0.0
@@ -137,10 +138,17 @@ func _process(delta: float) -> void:
 		if b["vida"] > 0.0 and is_instance_valid(b["nodo"]):
 			vivas.append(b)
 	_burbujas = vivas
+	var siguen: Array = []
+	for r in _rastreos:
+		r["t"] += real
+		if float(r["t"]) < float(r["dur"]) + float(r["vida"]):
+			siguen.append(r)
+	_rastreos = siguen
 	luces.queue_redraw()
-	if not _burbujas.is_empty() or _habia_burbujas or capa == "historial" or not zona_evento.is_empty():
+	var hay := not _burbujas.is_empty() or not _rastreos.is_empty() or capa == "historial" or not zona_evento.is_empty()
+	if hay or _habia_burbujas:
 		burbujas.queue_redraw()
-	_habia_burbujas = not _burbujas.is_empty() or capa == "historial" or not zona_evento.is_empty()
+	_habia_burbujas = hay
 	if activo and not pausado:
 		_actualizar_meteo(delta)
 	if clima != "despejado" or _flash > 0.0 or _habia_meteo:
@@ -208,6 +216,60 @@ func _dibujar_luces() -> void:
 			_luz(luces, inc.position, r, Color(1.0, 0.45, 0.08, 0.5 * fuerza))
 
 
+# ================================================================ LOCALIZACIÓN DE LLAMADAS
+
+## Círculo que se va cerrando sobre el mapa mientras se localiza una llamada.
+func rastreo(id: String, pos: Vector2, r0: float, r1: float, dur: float, texto: String, vida: float = 4.0) -> void:
+	for r in _rastreos:
+		if r["id"] == id:
+			r["pos"] = pos
+			r["r0"] = _radio_rastreo(r)
+			r["r1"] = r1
+			r["t"] = 0.0
+			r["dur"] = dur
+			r["texto"] = texto
+			r["vida"] = vida
+			return
+	_rastreos.append({"id": id, "pos": pos, "r0": r0, "r1": r1, "t": 0.0, "dur": dur, "texto": texto, "vida": vida})
+
+
+func quitar_rastreo(id: String) -> void:
+	for r in _rastreos.duplicate():
+		if r["id"] == id:
+			_rastreos.erase(r)
+
+
+func _radio_rastreo(r: Dictionary) -> float:
+	var k := clampf(float(r["t"]) / maxf(float(r["dur"]), 0.01), 0.0, 1.0)
+	return lerpf(float(r["r0"]), float(r["r1"]), 1.0 - pow(1.0 - k, 2.0))
+
+
+func _dibujar_rastreos(esc: float) -> void:
+	for r in _rastreos:
+		var p: Vector2 = r["pos"]
+		var radio := _radio_rastreo(r)
+		var terminado: bool = float(r["t"]) >= float(r["dur"])
+		var col := Color("3ddc84") if terminado else Color("ffd166")
+		var alfa := 1.0
+		if terminado:
+			alfa = clampf((float(r["dur"]) + float(r["vida"]) - float(r["t"])) / 1.0, 0.0, 1.0)
+		burbujas.draw_circle(p, radio, Color(col, 0.08 * alfa))
+		burbujas.draw_arc(p, radio, 0.0, TAU, 72, Color(col, 0.9 * alfa), 3.0 * esc)
+		if not terminado:
+			# Barrido de radar y ondas hacia dentro
+			var ang := _t * 4.0
+			burbujas.draw_line(p, p + Vector2.from_angle(ang) * radio, Color(col, 0.5), 2.0 * esc)
+			var onda := fmod(_t * 1.5, 1.0)
+			burbujas.draw_arc(p, radio * (1.0 - onda), 0.0, TAU, 48, Color(col, 0.5 * onda), 2.0 * esc)
+		var texto: String = r["texto"]
+		var w := fuente.get_string_size(texto, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 16.0
+		burbujas.draw_set_transform(p + Vector2(0, -radio - 10.0 * esc), 0.0, Vector2(esc, esc))
+		burbujas.draw_rect(Rect2(-w / 2.0, -24, w, 24), Color(0.02, 0.06, 0.15, 0.85 * alfa))
+		burbujas.draw_rect(Rect2(-w / 2.0, -24, w, 24), Color(col, alfa), false, 2.0)
+		burbujas.draw_string(fuente, Vector2(-w / 2.0 + 8, -7), texto, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, alfa))
+		burbujas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
 # ================================================================ BURBUJAS DE RADIO
 
 func burbuja(nodo: Node2D, texto: String, color: Color) -> void:
@@ -230,6 +292,7 @@ func burbuja(nodo: Node2D, texto: String, color: Color) -> void:
 func _dibujar_burbujas() -> void:
 	var esc := clampf(1.0 / maxf(zoom, 0.05), 0.6, 3.5)
 	var tam := 15
+	_dibujar_rastreos(esc)
 	# Nombre de la fiesta del día sobre la zona
 	if not zona_evento.is_empty():
 		var nombre: String = zona_evento["nombre"]

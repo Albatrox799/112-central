@@ -24,14 +24,42 @@ var texto_actual := ""
 var opciones_actuales: Array = []
 ## Cambios para el incidente: requiere, urgencia, traslado, categoria
 var efectos_incidente: Dictionary = {}
+# 0.97: más variedad en las conversaciones
+var extras: Array = []           # preguntas extra que se pueden añadir (banco)
+var extras_usadas: Array = []
+var coletillas: Array = []       # frases típicas de la personalidad del llamante
+var cortada := false             # la llamada se ha cortado (se sigue rastreando)
+var _ofrecidas: Dictionary = {}  # nodo -> preguntas extra que se ofrecieron allí
 
 
-func iniciar(d: Dictionary, vars: Dictionary = {}, p_desenlace: String = "", calma_inicial: int = -1) -> void:
+func iniciar(d: Dictionary, vars: Dictionary = {}, p_desenlace: String = "", calma_inicial: int = -1, apertura: String = "") -> void:
 	datos = d
 	variables = vars
 	desenlace = p_desenlace
 	calma = calma_inicial if calma_inicial >= 0 else int(d.get("calma_inicial", d.get("calma", 30)))
 	_entrar(d["inicio"])
+	if apertura != "" and not texto_actual.begins_with("("):
+		texto_actual = apertura + texto_actual
+
+
+## Preguntas extra que tienen sentido para esta llamada.
+func preparar_extras(banco: Array, categoria: String) -> void:
+	extras.clear()
+	if datos.get("falsa", false) or datos.get("relacionada", false):
+		return
+	for p in banco:
+		var cats: Array = p["cat"]
+		if cats.has("todas") or cats.has(categoria):
+			extras.append(p)
+	extras.shuffle()
+	# Vuelve a montar las opciones de la primera pantalla con las extra
+	if not terminada and datos["nodos"].has(nodo_actual):
+		_montar_opciones(datos["nodos"][nodo_actual])
+
+
+## Localización automática (AML del móvil o dirección de la línea fija).
+func localizar(nivel: int) -> void:
+	precision = maxi(precision, nivel)
 
 
 func _por_desenlace(dic: Dictionary):
@@ -72,15 +100,57 @@ func _entrar(id: String) -> void:
 			var e = _por_desenlace(n["efectos_por_desenlace"])
 			if e != null:
 				_aplicar(e)
+	# Coletilla de la personalidad (a veces)
+	if not es_fin and not coletillas.is_empty() and randf() < 0.3 and not texto_actual.begins_with("("):
+		texto_actual += String(coletillas[randi() % coletillas.size()])
 	opciones_actuales = []
+	if n.get("cuelga", false):
+		cortada = true
+		var t_corte := "[Colgar]" if datos.get("falsa", false) or datos.get("relacionada", false) else "[Colgar y crear el incidente]"
+		opciones_actuales.append({"texto": t_corte, "terminar": true})
+		return
 	if es_fin:
 		var texto_colgar := "[Colgar]" if datos.get("falsa", false) or datos.get("relacionada", false) else "[Colgar y crear el incidente]"
 		opciones_actuales.append({"texto": texto_colgar, "terminar": true})
 		return
+	_montar_opciones(n)
+
+
+## Opciones de la pantalla: las del guion, más alguna pregunta extra para que
+## haya 3 o 4, desordenadas para que no sea siempre la primera la buena.
+func _montar_opciones(n: Dictionary) -> void:
+	opciones_actuales = []
+	var normales: Array = []
 	for o in n.get("opciones", []):
 		var copia: Dictionary = o.duplicate()
 		copia["texto"] = _formato(o["texto"])
-		opciones_actuales.append(copia)
+		normales.append(copia)
+	if not extras.is_empty():
+		var ofrecidas: Array = _ofrecidas.get(nodo_actual, [])
+		var quiero := 0
+		if normales.size() < 3:
+			quiero = 3 - normales.size()
+		if normales.size() + quiero < 4 and randf() < 0.35:
+			quiero += 1
+		# Primero las que ya se ofrecieron aquí (para que no cambien al volver)
+		for p in ofrecidas:
+			if quiero <= 0:
+				break
+			if not extras_usadas.has(p):
+				normales.append({"texto": p["texto"], "extra": p})
+				quiero -= 1
+		for p in extras:
+			if quiero <= 0:
+				break
+			if extras_usadas.has(p) or ofrecidas.has(p):
+				continue
+			normales.append({"texto": p["texto"], "extra": p})
+			ofrecidas.append(p)
+			quiero -= 1
+		_ofrecidas[nodo_actual] = ofrecidas
+	if not datos.get("relacionada", false):
+		normales.shuffle()
+	opciones_actuales = normales
 	if precision >= 1 and not datos.get("falsa", false) and not datos.get("relacionada", false):
 		opciones_actuales.append({"texto": "[Terminar ya la llamada y crear el incidente]", "terminar": true})
 
@@ -116,7 +186,7 @@ func _aplicar(e: Dictionary) -> void:
 		for sv in e["requiere"]:
 			req[sv] = maxi(int(req.get(sv, 0)), int(e["requiere"][sv]))
 		efectos_incidente["requiere"] = req
-	for clave in ["urgencia", "traslado", "categoria", "heridos", "principal", "intensidad"]:
+	for clave in ["urgencia", "traslado", "categoria", "heridos", "principal", "intensidad", "quitar", "duracion"]:
 		if e.has(clave):
 			efectos_incidente[clave] = e[clave]
 
@@ -132,12 +202,25 @@ func elegir(indice: int) -> void:
 	if o.get("terminar", false):
 		terminada = true
 		return
+	if o.has("extra"):
+		_responder_extra(o["extra"])
+		return
 	_aplicar(o.get("efectos", {}))
 	if o.has("efectos_por_desenlace"):
 		var e = _por_desenlace(o["efectos_por_desenlace"])
 		if e != null:
 			_aplicar(e)
 	_entrar(o["ir_a"])
+
+
+## Pregunta extra: responde según lo nervioso que esté y se queda en la misma pantalla.
+func _responder_extra(p: Dictionary) -> void:
+	extras_usadas.append(p)
+	var lista: Array = p["nervioso"] if calma < 40 else p["calmo"]
+	texto_actual = _formato(String(lista[randi() % lista.size()]))
+	_aplicar(p.get("efectos", {}))
+	var n: Dictionary = datos["nodos"][nodo_actual]
+	_montar_opciones(n)
 
 
 func estado_emocional() -> String:

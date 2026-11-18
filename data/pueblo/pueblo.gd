@@ -191,7 +191,7 @@ const DENUNCIAS := [
 ## en la comisaría o una gran operación final. Avanzan cuando sale bien.
 ##   lugar: "industrial" (polígono), tipo de lugar del mapa (parque...) o nombre exacto
 const ARCOS := {
-	"poligono": {"nombre": "Operación Polígono", "dia_min": 3,
+	"poligono": {"nombre": "Operación Polígono", "dia_min": 2,
 		"etapas": [
 			{"tipo": "aviso", "turno": "noche", "lugar": "industrial",
 				"def": {"titulo": "Furgonetas entrando de madrugada en una nave", "servicios": ["policia"], "principal": "policia",
@@ -214,7 +214,7 @@ const ARCOS := {
 					"resultado_mal": "Los sospechosos han huido antes de que entraran los agentes."},
 				"titular": "Golpe al narcotráfico en el polígono de Miguelturra", "recompensa": 6000, "reputacion": 10, "logro": "redada"},
 		]},
-	"caso": {"nombre": "El caso del parque", "dia_min": 4,
+	"caso": {"nombre": "El caso del parque", "dia_min": 3,
 		"etapas": [
 			{"tipo": "aviso", "turno": "dia", "lugar": "parque", "siempre_avanza": true,
 				"def": {"titulo": "Hallado un hombre sin vida en un parque", "servicios": ["ambulancia", "policia"], "principal": "ambulancia",

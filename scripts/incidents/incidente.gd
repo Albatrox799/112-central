@@ -56,6 +56,10 @@ var llegadas: Dictionary = {}   # id de unidad -> momento en que llegó (para la
 var fallecidos := 0             # personas fallecidas (abren los trámites)
 var tramites_paso := 0         # 0 declaración, 1 juzgado y forense, 2 funeraria
 var clima := ""                 # tiempo que hacía al crearse
+var t_ambulancia := -1.0        # cuenta atrás si los heridos esperan una ambulancia (-1 = no)
+var esperando_ambulancia := false
+var refuerzos_avisados: Dictionary = {}   # servicio -> unidades ya pedidas por radio
+var escapado := false
 
 
 ## Unidades que siguen de verdad en el lugar.
@@ -126,6 +130,19 @@ func unidades_que_faltan() -> int:
 	var total := 0
 	for sv in requeridas:
 		total += maxi(int(requeridas[sv]) - int(presentes.get(sv, 0)), 0)
+	return total
+
+
+func faltan_de(sv: String) -> int:
+	return maxi(int(requeridas.get(sv, 0)) - int(presentes.get(sv, 0)), 0)
+
+
+## Refuerzos que faltan sin contar ambulancias (no son obligatorios).
+func faltan_apoyo() -> int:
+	var total := 0
+	for sv in requeridas:
+		if sv != "ambulancia":
+			total += faltan_de(sv)
 	return total
 
 
@@ -244,7 +261,7 @@ func _draw() -> void:
 	draw_polyline(borde, Color.WHITE, 2.5 * s)
 	# Refuerzos pedidos: "+N" parpadeando junto al hexágono
 	var faltan := unidades_que_faltan()
-	if faltan > 0 and (evento == "refuerzos" or evento == ""):
+	if faltan > 0 and (evento == "refuerzos" or evento == "" or evento == "en_curso"):
 		var vis := evento == "" or int(_t * 3.0) % 2 == 0
 		if vis:
 			var pos_marca := centro + Vector2(radio + 4.0 * s, -radio)
@@ -260,6 +277,11 @@ func _draw() -> void:
 		var fr := urgencia_restante / urgencia_total
 		var col_urg := Color("e74c3c").lerp(Color("2ecc71"), fr)
 		draw_arc(centro, radio + 7.0 * s, -PI / 2.0, -PI / 2.0 + TAU * fr, 40, col_urg, 4.0 * s)
+	elif t_ambulancia >= 0.0:
+		# Heridos esperando ambulancia: anillo blanco y rojo que se vacía
+		var fa := clampf(t_ambulancia / 120.0, 0.0, 1.0)
+		var col_amb := Color("ff3b3b") if int(_t * 4.0) % 2 == 0 else Color.WHITE
+		draw_arc(centro, radio + 7.0 * s, -PI / 2.0, -PI / 2.0 + TAU * fa, 40, col_amb, 4.0 * s)
 	draw_string_outline(f, centro + Vector2(-100, -radio - 12.0 * s), id_incidente, HORIZONTAL_ALIGNMENT_CENTER, 200, int(16 * s), int(4 * s), Color("0a1430"))
 	draw_string(f, centro + Vector2(-100, -radio - 12.0 * s), id_incidente, HORIZONTAL_ALIGNMENT_CENTER, 200, int(16 * s), Color.WHITE)
 

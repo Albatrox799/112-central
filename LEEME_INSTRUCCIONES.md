@@ -23,10 +23,26 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Pantalla de equipos** antes de cada turno: personal de cada vehículo, contratar o despedir, comprar equipo y vender vehículos.
 - **Tienda**: motos, furgones, ambulancias de soporte vital, camión escalera y unidad de rescate, además del equipo para cada servicio (chalecos, antidisturbios, alcoholímetro, extinción, búsqueda, equipo técnico, botiquín y desfibrilador).
 - **En el lugar**: al llegar las unidades se ve abajo a la izquierda un plano con lo que pasa (detenciones, incendios, heridos, atrapados, controles).
-- **Refuerzos**: algunas emergencias necesitan varias unidades, y a veces piden más a mitad de la intervención. El hexágono muestra "+1" y hay 40 segundos para mandarlas.
+- **Refuerzos**: algunas emergencias necesitan varias unidades, y a veces piden más a mitad de la intervención. El hexágono muestra "+1" (desde la 0.97 no es obligatorio mandarlas).
 - **Enviar desde la unidad**: selecciona una unidad con X y elige la emergencia de la lista (ordenada por cercanía) o con la mira en el mapa.
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
+
+## Novedades de la versión 0.97
+
+- **Velocidades:** en emergencia, con sirenas, todas las unidades van al 120 %. Volviendo a la base o del hospital, al 100 %. Patrullando, igual que antes. Coche patrulla, camuflado, unidad canina, furgón y moto de policía son más rápidos (la moto sigue siendo la más rápida).
+- **Apoyo que da la vuelta:** si un aviso termina antes de que llegue una unidad que iba de camino, esa unidad vuelve a la base en el momento.
+- **Refuerzos sin obligación:** ya no hay cuenta atrás que haga fallar el aviso. Las unidades piden por radio («Nos vendría bien otra patrulla»). Si no las mandas, trabajan más despacio (más o menos según la dificultad) y en peleas y robos hay más riesgo de agentes heridos y de que alguien escape.
+- **Ambulancias para heridos:** cuando hay heridos, la unidad lo dice claro y el hexágono muestra un anillo rojo y blanco con el tiempo que aguanta el herido. Si no llega ninguna ambulancia, el herido puede morir. Las peleas y los robos pueden acabar con heridos.
+- **Sacar unidades de un aviso:** una unidad que está apoyando (tráfico, Protección Civil, primera respuesta), una que va de camino o una que sobra se puede mandar a otro aviso o devolver a la base, desde la propia unidad (Cuadrado) o desde la otra emergencia («Sacar X de INC-Y y enviarla aquí»).
+- **VIR y moto sanitaria:** cuando llega la ambulancia que traslada, se quedan de apoyo y puedes reasignarlos a otro aviso.
+- **Localización de llamadas:** al coger cada llamada aparece «LOCALIZANDO…» con pitidos y un círculo que se cierra en el mapa. Una línea fija da la calle del abonado; un móvil, solo una zona. Si la llamada se corta (o la persona cuelga de los nervios), se sigue rastreando el teléfono entre 20 y 40 segundos y la localización mejora sola.
+- **Llamadas nuevas:** 19 llamadas nuevas (atragantamiento, golpe de calor, ciclista atropellado, bebé encerrado en un coche, alergia, tirón, navajazo, coma etílico, coche ardiendo, ladrones en casa, convulsiones...), 6 llamadas falsas o pesadas, una llamada silenciosa y un anciano desorientado. Ninguna se repite en el mismo turno.
+- **Diálogos más vivos:** siempre hay 3 o 4 opciones, desordenadas, con preguntas extra que cambian en cada llamada (algunas son trampa y ponen nerviosa a la persona). Cada llamante tiene su forma de ser (habla deprisa, oye mal, llora, de malas maneras...) y empieza de forma distinta.
+- **Historias nuevas:** pelea entre bandas, asalto violento en una vivienda, persona armada, contrabando en el polígono, parto en un coche, explosión de butano y un padre que se lleva a su hijo sin permiso.
+- **Más fallecimientos:** muertes naturales (casi uno por turno), por llegar tarde o por malas instrucciones por teléfono. El VIR, el PMA y una buena reanimación bajan el riesgo; en dificultad Tranquila pasa menos. El periódico lo cuenta sin rodeos, y en el lugar se ve sangre y a la familia llorando.
+- **Búsquedas más largas:** buscar a alguien lleva más tiempo; cada patrulla de más y la unidad canina lo acortan.
+- **Investigaciones:** empiezan antes (Operación Polígono desde el día 2, el caso del parque desde el día 3), la pista llega en los primeros minutos del turno con aviso dorado, vibración y la cámara viajando hasta el lugar, y el menú de turnos dice en qué turno llegará la siguiente pista.
 
 ## Versión 0.96.2 · Arreglo de la instalación
 

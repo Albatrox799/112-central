@@ -21,8 +21,10 @@ const NOMBRES_SERVICIO := {
 	"sospechoso": "Vehículo sospechoso",
 }
 const FACTOR_SIN_EMERGENCIA := 0.45
-const FACTOR_REPONER := 0.8
+const FACTOR_SIRENAS := 1.2      # en emergencia van al 120 % de su velocidad
+const FACTOR_VUELTA := 1.0       # volviendo a la base o del hospital, al 100 %
 const FACTOR_PATRULLA := 0.35
+const ESTADOS_VUELTA := ["Regresando", "Reponiendo material", "Trasladando detenido", "Sin personal"]
 
 var id_unidad := ""
 var servicio := ""
@@ -145,12 +147,15 @@ func patrullar() -> void:
 func velocidad_actual() -> float:
 	var v := velocidad
 	v *= 1.0 - cansancio / 400.0   # el cansancio hace que vayan algo más lentos
-	if estado == "Reponiendo material":
-		v *= FACTOR_REPONER
-	elif estado == "Trasladando detenido":
-		v *= 0.7   # sin material: vuelve a la base con prisa, sin sirenas
-	elif not en_emergencia:
-		v *= FACTOR_PATRULLA if estado == "Patrullando" else FACTOR_SIN_EMERGENCIA
+	if en_emergencia:
+		if servicio != "sospechoso":
+			v *= FACTOR_SIRENAS
+	elif ESTADOS_VUELTA.has(estado):
+		v *= FACTOR_VUELTA
+	elif estado == "Patrullando":
+		v *= FACTOR_PATRULLA
+	else:
+		v *= FACTOR_SIN_EMERGENCIA
 	return v * factor_trafico
 
 
@@ -158,7 +163,8 @@ func velocidad_actual() -> float:
 func tiempo_estimado(destino: int) -> float:
 	var camino := red.ruta(siguiente_nodo, destino)
 	var dist := position.distance_to(red.pos(siguiente_nodo)) + red.longitud_ruta(camino)
-	return dist / (velocidad * factor_trafico * 0.95)
+	var f := FACTOR_SIRENAS if servicio != "sospechoso" else 1.0
+	return dist / (velocidad * f * factor_trafico * 0.95)
 
 
 ## Segundos que le quedan para terminar la ruta actual.

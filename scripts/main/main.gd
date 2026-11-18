@@ -15,8 +15,11 @@ const Incidente = preload("res://scripts/incidents/incidente.gd")
 const Hud = preload("res://scripts/interface/hud.gd")
 const Llamada = preload("res://scripts/calls/llamada.gd")
 const DatosLlamadas = preload("res://data/dialogues/llamadas.gd")
+const LlamadasExtra = preload("res://data/dialogues/llamadas_extra.gd")
+const Preguntas = preload("res://data/dialogues/preguntas.gd")
 const Catalogo = preload("res://data/gestion/catalogo.gd")
 const DatosHistorias = preload("res://data/historias/historias.gd")
+const HistoriasExtra = preload("res://data/historias/historias_extra.gd")
 const Efectos = preload("res://scripts/effects/efectos.gd")
 const RUTA_OPCIONES := "user://opciones.cfg"
 const RUTA_MAPA := "res://data/map/miguelturra.json"
@@ -120,6 +123,14 @@ var llamada_perfil := ""
 var llamada_calma := -1
 var llamada_vars: Dictionary = {}
 var llamada_rel_inc = null
+var todas_llamadas: Array = []       # las de siempre y las nuevas (0.97)
+var todas_historias: Array = []
+var llamadas_turno: Array = []       # ids que ya han sonado este turno (no se repiten)
+var llamada_linea := "movil"         # movil (AML, zona) o fijo (dirección del abonado)
+var llamada_desvio := Vector2.ZERO   # dónde cae el centro de la zona aproximada
+var llamada_coletillas: Array = []
+var _t_pitido := 0.0
+var localizando := false
 var cola_relacionadas: Array = []   # [incidente, clave de llamada]
 
 # Portada, opciones, tutorial y objetivos
@@ -127,6 +138,9 @@ var en_portada := false
 var decoracion: Node2D
 var rutas_decor: Array = []
 var _t_portada := 0.0
+const RIESGO_MUERTE := {"tranquila": 0.12, "normal": 0.3, "caotica": 0.45}
+const PENALIZA_SIN_REFUERZO := {"tranquila": 0.8, "normal": 0.65, "caotica": 0.5}
+const ESPERA_AMBULANCIA := {"tranquila": 140.0, "normal": 95.0, "caotica": 70.0}
 var opciones := {"volumen": 1.0, "texto_grande": false, "dificultad": "normal", "texto_animado": true, "calidad": "alta", "vibracion": true, "meteo": true}
 var tutorial_activo := false
 var consejos_vistos: Array = []
@@ -165,6 +179,10 @@ func _ready() -> void:
 	tamano_mapa = Vector2(float(datos_mapa["tamano"][0]), float(datos_mapa["tamano"][1]))
 	nodo_salida = red.nodo_mas_al_oeste()
 	_anadir_lugares_virtuales()
+	todas_llamadas = DatosLlamadas.LLAMADAS.duplicate()
+	todas_llamadas.append_array(LlamadasExtra.construir())
+	todas_historias = DatosHistorias.HISTORIAS.duplicate()
+	todas_historias.append_array(HistoriasExtra.HISTORIAS)
 
 	# Todo lo que se detiene en pausa va dentro de "mundo"
 	mundo = Node2D.new()
@@ -505,6 +523,7 @@ func _empezar_turno(tipo: String) -> void:
 		"historias": 0, "historias_buenas": 0, "relacionadas": 0, "fallecidos": 0, "sucesos": [],
 		"titular_especial": "", "logros_nuevos": [], "detenidos_huida": 0, "detenidos": 0, "multas": 0, "comision": 0}
 	cola_relacionadas.clear()
+	llamadas_turno.clear()
 	_elegir_objetivos()
 	var t: Dictionary = TURNOS[tipo]
 	segundos_sim = float(t["inicio"]) * 3600.0
@@ -521,6 +540,9 @@ func _empezar_turno(tipo: String) -> void:
 	_preparar_vida_del_pueblo()
 	_programar(5.0, _sonar_llamada)
 	_programar(35.0, _evento_aleatorio)
+	var p_natural: float = {"tranquila": 0.45, "normal": 0.85, "caotica": 1.0}.get(opciones["dificultad"], 0.85)
+	if randf() < p_natural:
+		_programar(randf_range(150.0, 620.0), _aviso_muerte_natural)
 
 
 # ================================================================ EQUIPOS Y TIENDA
@@ -750,7 +772,22 @@ func _datos_periodico(media: float) -> Dictionary:
 	var titular := "Turno tranquilo en la central del 112 de Miguelturra"
 	var sub := "Los operadores apenas han tenido avisos durante la jornada."
 	if muerte != null:
-		titular = "Jornada trágica: fallece una persona en %s" % (muerte["calle"] if muerte["calle"] != "" else "Miguelturra")
+		var sitio: String = muerte["calle"] if muerte["calle"] != "" else "Miguelturra"
+		var muertes := 0
+		for su in sucesos:
+			if su["fallecido"]:
+				muertes += 1
+		var t_muerte: String = String(muerte["titulo"]).to_lower()
+		var opciones_tit := [
+			"Jornada trágica: fallece una persona en %s" % sitio,
+			"Muere un vecino en %s tras %s" % [sitio, t_muerte],
+			"Luto en Miguelturra: una víctima mortal en %s" % sitio,
+		]
+		if t_muerte.contains("arma") or t_muerte.contains("navaja") or t_muerte.contains("banda") or t_muerte.contains("asalto"):
+			opciones_tit = ["Sangre en las calles de Miguelturra: un muerto en %s" % sitio, "Crimen en %s: la Guardia Civil investiga una muerte violenta" % sitio]
+		titular = opciones_tit[randi() % opciones_tit.size()]
+		if muertes >= 2:
+			titular = "Turno negro en el 112: %d fallecidos en una sola jornada" % muertes
 		sub = String(muerte["resultado"])
 	elif stats["perdidas"] >= 3:
 		titular = "Críticas al 112: varias llamadas se quedan sin respuesta"
@@ -1034,7 +1071,7 @@ func _sonar_historia(id: String) -> void:
 	if llamada_sonando or llamada != null or hud.llamada_abierta():
 		_programar(20.0, _sonar_historia.bind(id))
 		return
-	for h in DatosHistorias.HISTORIAS:
+	for h in todas_historias:
 		if h["id"] == id:
 			llamada_rel_inc = null
 			llamada_historia = {}
@@ -1334,13 +1371,17 @@ func _programar_arcos() -> void:
 		if bool(e["cerrado"]) or int(partida["dia"]) < int(arco["dia_min"]) or int(e["dia_ult"]) >= int(partida["dia"]):
 			continue
 		var etapa := _etapa_actual(id)
-		if etapa.is_empty() or (etapa["turno"] != "ambos" and etapa["turno"] != turno):
+		if etapa.is_empty():
 			continue
+		if etapa["turno"] != "ambos" and etapa["turno"] != turno:
+			hud.notificar("%s: la próxima pista llegará en un turno de %s." % [arco["nombre"], "NOCHE" if etapa["turno"] == "noche" else "DÍA"], Color("ffd166"))
+			continue
+		hud.notificar("Investigación en marcha: %s. Hoy puede haber novedades." % arco["nombre"], Color("ffd700"))
 		if etapa["tipo"] == "denuncia":
 			etapas_programadas.append(id)
-			_programar(randf_range(90.0, 200.0), _llega_denuncia)
+			_programar(randf_range(60.0, 150.0), _llega_denuncia)
 		else:
-			_programar(randf_range(120.0, 420.0), _lanzar_etapa.bind(id))
+			_programar(randf_range(60.0, 180.0), _lanzar_etapa.bind(id))
 
 
 func _lanzar_etapa(id: String) -> void:
@@ -1356,8 +1397,11 @@ func _lanzar_etapa(id: String) -> void:
 	inc.etapa_arco = int(_estado_arco(id)["etapa"])
 	if etapa["tipo"] == "gran":
 		hud.notificar("¡%s! Es la gran operación de la investigación. Prepara a tus mejores unidades." % etapa["def"]["titulo"], Color("ffd700"))
-		_vibrar(0.7, 0.7, 0.8)
-		_viaje_camara(inc.position)
+	else:
+		hud.notificar("INVESTIGACIÓN · %s: %s (%s)" % [Pueblo.ARCOS[id]["nombre"], etapa["def"]["titulo"], inc.id_incidente], Color("ffd700"))
+	_sonido("alerta")
+	_vibrar(0.7, 0.7, 0.8)
+	_viaje_camara(inc.position)
 
 
 func _lugar_de_etapa(lugar: String) -> Dictionary:
@@ -1401,8 +1445,15 @@ func _texto_investigaciones(corto: bool) -> String:
 		if bool(e["cerrado"]):
 			if not corto:
 				lineas.append("· %s: RESUELTA" % Pueblo.ARCOS[id]["nombre"])
-		elif int(e["etapa"]) > 0 or not corto:
-			lineas.append("· %s: %d de %d pasos" % [Pueblo.ARCOS[id]["nombre"], int(e["etapa"]), total])
+		else:
+			var linea := "· %s: %d de %d pasos" % [Pueblo.ARCOS[id]["nombre"], int(e["etapa"]), total]
+			var sig := _etapa_actual(id)
+			if not sig.is_empty():
+				if int(e["dia_ult"]) >= int(partida["dia"]):
+					linea += " · seguirá mañana"
+				else:
+					linea += " · próxima pista: turno de %s" % {"dia": "DÍA", "noche": "NOCHE"}.get(String(sig["turno"]), "día o noche")
+			lineas.append(linea)
 	if lineas.is_empty():
 		return ""
 	return "Investigaciones:\n" + "\n".join(PackedStringArray(lineas))
@@ -1508,6 +1559,7 @@ func _robo_huida(inc, v) -> bool:
 	inc.exito = true
 	inc.resultado = "Los ladrones huyen en un coche: persecución en curso (%s)." % av.id_incidente
 	v.estado = "Disponible"
+	_retirar_en_camino(inc)
 	_iniciar_persecucion(v, av)
 	_radio(v, "¡Los ladrones salen corriendo y huyen en un coche! Vamos tras ellos.")
 	return true
@@ -1603,8 +1655,10 @@ func _process(delta: float) -> void:
 		_mover_camara(delta)
 	_vigilar_persecucion()
 	_vigilar_urgencias()
+	_pitidos_localizacion(delta)
 	if not pausa_tactica:
 		_actualizar_eventos(delta)
+		_vigilar_ambulancias(delta)
 		_t_historias -= delta
 		if _t_historias <= 0.0:
 			_t_historias = 1.0
@@ -2053,8 +2107,94 @@ func _mostrar_unidad(v) -> void:
 				"accion": _enviar_desde_unidad.bind(v, inc)})
 		if lista.is_empty():
 			texto += "\nNo hay emergencias activas a las que enviarla."
+	elif _puede_reasignar(v):
+		texto += "\nEstá apoyando en %s: puedes sacarla y mandarla a otro aviso." % v.incidente.id_incidente
+		var otros := []
+		for inc in incidentes:
+			if inc.activo() and inc.evento != "terminado" and inc != v.incidente and inc.tipo != "aviso_trafico":
+				otros.append([v.tiempo_estimado(_destino_de(inc)), inc])
+		otros.sort_custom(func(a, b): return a[0] < b[0])
+		for par in otros:
+			var inc = par[1]
+			opciones.append({"texto": "Dejar %s e ir a %s · %s · llega en %s" % [v.incidente.id_incidente, inc.id_incidente, inc.titulo, _texto_segundos(par[0])],
+				"accion": _reasignar.bind(v, inc)})
+		opciones.append({"texto": "Dejar %s y volver a la base" % v.incidente.id_incidente, "accion": _retirar_apoyo.bind(v)})
 	opciones.append({"texto": "Volver al mapa", "accion": _cerrar_panel})
 	hud.mostrar_panel(v.id_unidad, texto, opciones)
+
+
+## ¿Se puede sacar esta unidad del aviso en el que está? Sí, si solo está
+## apoyando (tráfico, Protección Civil, primera respuesta), si va de camino,
+## si es un VIR o moto sanitaria y ya hay ambulancia de traslado, o si sobra.
+func _puede_reasignar(v) -> bool:
+	if v.externo or v.efectivos() <= 0:
+		return false
+	var inc = v.incidente
+	if inc == null or not is_instance_valid(inc) or not inc.activo():
+		return false
+	if String(inc.evento).begins_with("tramites") or inc.tipo == "aviso_trafico":
+		return false
+	if v.fase in ["ida", "buscando", "buscando2"]:
+		return true
+	if v.estado != "En intervención":
+		return false
+	if v.fase in ["apoyo", "primera_respuesta"] or inc.apoyos.has(v):
+		return true
+	if not inc.en_lugar.has(v):
+		return false
+	if v.bono in ["vir", "moto_sanitaria", "pma"]:
+		for o in inc.en_lugar:
+			if o != v and is_instance_valid(o) and o.servicio == "ambulancia" and not NO_TRASLADAN.has(o.bono):
+				return true
+	# Sobra: hay más unidades de su servicio de las que hacen falta
+	return int(inc.presentes.get(v.servicio, 0)) > maxi(int(inc.requeridas.get(v.servicio, 0)), 1)
+
+
+## Quita la unidad de su aviso actual (sin enviarla aún a ningún sitio).
+func _soltar_de_aviso(v) -> void:
+	var inc = v.incidente
+	if inc == null or not is_instance_valid(inc):
+		return
+	inc.apoyos.erase(v)
+	inc.en_escena.erase(v)
+	inc.unidades.erase(v)
+	if inc.en_lugar.has(v):
+		inc.en_lugar.erase(v)
+		inc.presentes[v.servicio] = maxi(0, int(inc.presentes.get(v.servicio, 1)) - 1)
+	inc.registrar(_hora(segundos_sim), "%s deja el aviso por orden de la central" % v.id_unidad)
+	v.incidente = null
+	if inc.estado == "Unidad en camino":
+		var queda := false
+		for o in inc.unidades:
+			if is_instance_valid(o) and o.incidente == inc and o.servicio == inc.servicio_necesario:
+				queda = true
+		if not queda:
+			inc.estado = "Pendiente"
+
+
+func _reasignar(v, nuevo) -> void:
+	if not _puede_reasignar(v) or not nuevo.activo():
+		hud.notificar("No es posible sacar %s ahora mismo." % v.id_unidad)
+		return
+	var viejo = v.incidente
+	_soltar_de_aviso(v)
+	v.estado = "Disponible"
+	v.fase = ""
+	_radio(v, "Recibido, central. Dejamos %s y vamos a %s." % [viejo.id_incidente, nuevo.id_incidente])
+	if nuevo.tipo == "aviso_trafico":
+		_enviar_desde_unidad(v, nuevo)
+	else:
+		_enviar_unidad(v, nuevo)
+
+
+func _retirar_apoyo(v) -> void:
+	if not _puede_reasignar(v):
+		return
+	var viejo = v.incidente
+	_soltar_de_aviso(v)
+	_radio(v, "Recibido. Dejamos %s y volvemos." % viejo.id_incidente)
+	_regresar(v)
+	_cerrar_panel()
 
 
 func _destino_de(inc) -> int:
@@ -2127,6 +2267,10 @@ func _mostrar_incidente(inc) -> void:
 		texto += "\nIntensidad del fuego: %d de 3" % inc.intensidad
 	if inc.requeridas.size() > 0:
 		texto += "\nUnidades: %s" % inc.texto_requeridas()
+	if inc.t_ambulancia >= 0.0:
+		texto += "\n¡HERIDO ESPERANDO AMBULANCIA! Aguanta: %s" % _texto_segundos(inc.t_ambulancia)
+	elif inc.evento == "en_curso" and inc.faltan_apoyo() > 0:
+		texto += "\nPiden refuerzos (no es obligatorio): sin ellos van más lentos"
 	for c in inc.confirmados:
 		texto += "\nCONFIRMADO: %s" % c
 	for k in range(maxi(0, inc.informacion.size() - 3), inc.informacion.size()):
@@ -2168,6 +2312,10 @@ func _mostrar_incidente(inc) -> void:
 				etiqueta += " · como apoyo"
 			if v.cansancio >= 50.0:
 				etiqueta += " · cansados (%d%%)" % int(v.cansancio)
+			if not item[2] and _puede_reasignar(v) and v.incidente != inc:
+				etiqueta = "Sacar %s de %s y enviarla aquí · llega en %s" % [v.id_unidad, v.incidente.id_incidente, _texto_segundos(item[4])]
+				opciones.append({"texto": etiqueta, "accion": _reasignar.bind(v, inc)})
+				continue
 			if not item[2]:
 				etiqueta = "%s no disponible (%s)" % [v.id_unidad, v.estado]
 			opciones.append({"texto": etiqueta, "accion": _enviar_unidad.bind(v, inc), "activo": item[2]})
@@ -2196,9 +2344,10 @@ func _sonar_llamada(solo_relacionadas: bool = false) -> void:
 	llamada_rel_inc = null
 	llamada_historia = {}
 	llamada_desenlace = ""
+	llamada_coletillas = []
 	# Historias (menos frecuentes que las llamadas sencillas)
 	var historias := []
-	for h in DatosHistorias.HISTORIAS:
+	for h in todas_historias:
 		var solo: String = h.get("solo_evento", "")
 		if (h["turno"] == turno or h["turno"] == "ambos") and (solo == "" or solo == evento_hoy):
 			historias.append(h)
@@ -2206,16 +2355,27 @@ func _sonar_llamada(solo_relacionadas: bool = false) -> void:
 		_preparar_historia(_elegir_historia(historias))
 	else:
 		var posibles := []
-		for d in DatosLlamadas.LLAMADAS:
-			if (d["turno"] == turno or d["turno"] == "ambos") and d["id"] != ultima_llamada_id:
+		for d in todas_llamadas:
+			if (d["turno"] == turno or d["turno"] == "ambos") and d["id"] != ultima_llamada_id and not llamadas_turno.has(d["id"]):
 				posibles.append(d)
+		if posibles.is_empty():
+			# Ya han salido todas este turno: se empieza de nuevo
+			llamadas_turno.clear()
+			for d in todas_llamadas:
+				if (d["turno"] == turno or d["turno"] == "ambos") and d["id"] != ultima_llamada_id:
+					posibles.append(d)
 		if posibles.is_empty():
 			return
 		llamada_datos = posibles[randi() % posibles.size()]
 		ultima_llamada_id = llamada_datos["id"]
+		llamadas_turno.append(llamada_datos["id"])
 		llamada_lugar = _elegir_lugar(llamada_datos["referencias"])
-		llamada_perfil = llamada_datos["llamante"]
-		llamada_calma = -1
+		var pers: Dictionary = Preguntas.PERSONALIDADES[randi() % Preguntas.PERSONALIDADES.size()]
+		llamada_perfil = String(llamada_datos["llamante"])
+		if pers["nombre"] != "normal" and not llamada_datos.get("falsa", false):
+			llamada_perfil += " · " + String(pers["nombre"])
+			llamada_coletillas = pers["coletillas"]
+		llamada_calma = clampi(int(llamada_datos.get("calma_inicial", 30)) + int(pers["calma"]), 5, 95)
 		llamada_vars = {"lugar": llamada_lugar.get("nombre", "la plaza"), "calle": llamada_lugar.get("calle", "una calle del centro")}
 	_hacer_sonar()
 
@@ -2323,10 +2483,19 @@ func _contestar_llamada() -> void:
 		_cerrar_panel()
 	stats["llamadas"] += 1
 	llamada = Llamada.new()
-	llamada.iniciar(llamada_datos, llamada_vars, llamada_desenlace, llamada_calma)
+	llamada.coletillas = llamada_coletillas
+	var apertura := ""
+	if llamada_rel_inc == null and randf() < 0.45:
+		apertura = String(Preguntas.APERTURAS[randi() % Preguntas.APERTURAS.size()])
+	llamada.iniciar(llamada_datos, llamada_vars, llamada_desenlace, llamada_calma, apertura)
+	var cat := "medico"
+	if llamada_datos.has("incidente"):
+		cat = String(llamada_datos["incidente"].get("categoria", "medico"))
+	llamada.preparar_extras(Preguntas.PREGUNTAS, cat)
 	hud.abrir_llamada()
 	_aplicar_escala()
 	_refrescar_llamada()
+	_empezar_localizacion()
 	_consejo("conversacion", "Elige qué decir con la cruceta. Tranquiliza a la persona y averigua dónde está: cuanto más precisa sea la localización, antes llegará la ayuda.")
 
 
@@ -2343,11 +2512,114 @@ func _refrescar_llamada() -> void:
 		Incidente.NOMBRES_PRECISION[llamada.precision], datos_vistos, textos, llamada.precision)
 
 
+# ================================================================ LOCALIZACIÓN DE LA LLAMADA (0.97)
+## Al coger la llamada, el sistema localiza el teléfono: un fijo da la calle
+## del abonado en pocos segundos; un móvil, solo una zona (AML). Si se corta
+## la llamada, se sigue rastreando el origen durante un rato.
+
+func _empezar_localizacion() -> void:
+	llamada_desvio = Vector2.from_angle(randf() * TAU) * 200.0
+	if llamada_rel_inc != null or llamada_datos.get("falsa", false) and randf() < 0.5:
+		hud.set_localizando("", 0.0)
+		localizando = false
+		return
+	llamada_linea = String(llamada_datos.get("linea", "fijo" if randf() < 0.3 else "movil"))
+	var dur := 4.0 if llamada_linea == "fijo" else randf_range(7.0, 11.0)
+	localizando = true
+	_t_pitido = 0.0
+	var centro := _pos_llamada()
+	var etiqueta := "LOCALIZANDO… LÍNEA FIJA" if llamada_linea == "fijo" else "LOCALIZANDO… MÓVIL (AML)"
+	hud.set_localizando(etiqueta, dur)
+	efectos.rastreo("llamada", centro + llamada_desvio * (0.0 if llamada_linea == "fijo" else 1.0), 1100.0, 140.0 if llamada_linea == "fijo" else 380.0, dur, etiqueta)
+	_programar(dur, _fin_localizacion.bind(contador_llamadas))
+
+
+func _pos_llamada() -> Vector2:
+	var nodo := int(llamada_lugar.get("nodo", red.nodo_mas_cercano(tamano_mapa / 2.0)))
+	if llamada_linea == "fijo":
+		return Vector2(float(llamada_lugar.get("x", red.pos(nodo).x)), float(llamada_lugar.get("y", red.pos(nodo).y)))
+	return red.pos(nodo)
+
+
+func _fin_localizacion(numero: int) -> void:
+	localizando = false
+	if llamada == null or numero != contador_llamadas:
+		return
+	if llamada_datos.get("falsa", false):
+		hud.set_localizando("Localizada: %s" % ("línea fija" if llamada_linea == "fijo" else "zona del móvil"), -1.0)
+		efectos.rastreo("llamada", _pos_llamada(), 380.0, 380.0, 0.1, "LOCALIZADA", 2.5)
+		return
+	if llamada_linea == "fijo":
+		llamada.localizar(2)
+		var dato := "Línea fija: el abonado vive en %s" % llamada_vars.get("calle", "el centro")
+		if not llamada.informacion.has(dato):
+			llamada.informacion.append(dato)
+		hud.set_localizando("LÍNEA FIJA · %s" % llamada_vars.get("calle", ""), -1.0)
+		efectos.rastreo("llamada", _pos_llamada(), 140.0, 140.0, 0.1, "LÍNEA FIJA LOCALIZADA", 3.0)
+	else:
+		llamada.localizar(1)
+		if not llamada.informacion.has("Móvil localizado por AML: zona aproximada"):
+			llamada.informacion.append("Móvil localizado por AML: zona aproximada")
+		hud.set_localizando("MÓVIL · zona aproximada (radio 400 m)", -1.0)
+		efectos.rastreo("llamada", _pos_llamada() + llamada_desvio, 380.0, 380.0, 0.1, "ZONA DEL MÓVIL", 3.0)
+	_sonido("radio")
+	hud.actualizar_localizacion(Incidente.NOMBRES_PRECISION[llamada.precision], llamada.precision)
+	var datos_vistos: Array = llamada.informacion.duplicate()
+	for c in llamada.confirmados:
+		datos_vistos.append("CONFIRMADO: " + c)
+	hud.actualizar_datos(datos_vistos)
+
+
+## Tras cortarse la llamada, se sigue rastreando el teléfono.
+func _rastrear_incidente(inc, linea: String) -> void:
+	var objetivo := 3 if linea == "fijo" else 2
+	if inc.precision >= objetivo:
+		return
+	var dur := randf_range(20.0, 40.0)
+	var r0: float = inc.radio_visible() if inc.radio_visible() > 0.0 else 900.0
+	inc.informacion.append("Llamada cortada: rastreando el origen del %s" % ("teléfono fijo" if linea == "fijo" else "móvil"))
+	inc.registrar(_hora(segundos_sim), "Se corta la llamada: empieza el rastreo")
+	efectos.rastreo(inc.id_incidente, inc.pos_exacta if objetivo == 3 else inc.pos_calle, r0, 30.0 if objetivo == 3 else 140.0, dur, "RASTREANDO %s…" % inc.id_incidente)
+	_consejo("rastreo", "Si se corta la llamada, la central sigue rastreando el teléfono: en unos segundos la localización mejora sola. Puedes mandar ya una unidad a la zona.")
+	_programar(dur, _fin_rastreo.bind(inc, objetivo))
+
+
+func _fin_rastreo(inc, objetivo: int) -> void:
+	if not is_instance_valid(inc) or not inc.activo():
+		return
+	if inc.precision < objetivo:
+		inc.precision = objetivo
+		inc.actualizar_posicion()
+		inc.nodo_aproximado = red.nodo_mas_cercano(inc.posicion_aproximada())
+	inc.registrar(_hora(segundos_sim), "Rastreo completado: %s" % inc.texto_precision())
+	hud.notificar("%s: rastreo completado · %s" % [inc.id_incidente, inc.texto_precision()], Color("3ddc84"))
+	_sonido("radio")
+	efectos.rastreo(inc.id_incidente, inc.posicion_aproximada(), inc.radio_visible() + 30.0, inc.radio_visible() + 30.0, 0.1, "LOCALIZADO", 3.0)
+	# Las unidades que iban a la zona aproximada corrigen el rumbo
+	for v in inc.unidades:
+		if is_instance_valid(v) and v.incidente == inc and v.fase == "ida":
+			v.ir_a(inc.nodo_real if inc.precision >= 3 else inc.nodo_aproximado)
+
+
+func _pitidos_localizacion(delta: float) -> void:
+	if not localizando or llamada == null:
+		return
+	_t_pitido -= delta / maxf(Engine.time_scale, 0.01)
+	if _t_pitido <= 0.0:
+		_t_pitido = 0.55
+		_sonido("pitido")
+
+
 func _elegir_opcion(indice: int) -> void:
 	if llamada == null:
 		return
 	_sonido("click")
 	llamada.elegir(indice)
+	# Si la persona está al borde del pánico, puede colgar o cortarse
+	if not llamada.terminada and llamada.calma <= 8 and llamada_rel_inc == null and not llamada_datos.get("falsa", false) and randf() < 0.3:
+		llamada.cortada = true
+		llamada.terminada = true
+		hud.notificar("La persona ha colgado de los nervios... Se rastrea el teléfono.", COLOR_LLAMADA)
 	if llamada.terminada:
 		_terminar_llamada()
 	else:
@@ -2357,6 +2629,9 @@ func _elegir_opcion(indice: int) -> void:
 func _terminar_llamada() -> void:
 	hud.cerrar_llamada()
 	_aplicar_escala()
+	localizando = false
+	efectos.quitar_rastreo("llamada")
+	var cortada: bool = llamada != null and llamada.cortada
 	# Llamada relacionada: se une al incidente que ya existe
 	if llamada_rel_inc != null:
 		var inc_rel = llamada_rel_inc
@@ -2388,6 +2663,8 @@ func _terminar_llamada() -> void:
 	inc.traslado = d.get("traslado", false)
 	inc.tiempo_intervencion = d.get("intervencion", 10.0)
 	inc.categoria = d.get("categoria", "medico")
+	inc.heridos = int(d.get("heridos", 1))
+	inc.intensidad = int(d.get("intensidad", 1))
 	inc.requeridas = d.get("requeridas", {d["principal"]: 1}).duplicate()
 	inc.informacion = llamada.informacion.duplicate()
 	inc.confirmados = llamada.confirmados.duplicate()
@@ -2405,7 +2682,7 @@ func _terminar_llamada() -> void:
 	inc.pos_exacta = red.pos(nodo)
 	inc.pos_calle = Vector2(float(llamada_lugar.get("x", inc.pos_exacta.x)), float(llamada_lugar.get("y", inc.pos_exacta.y)))
 	inc.radio_calle = 140.0
-	inc.pos_zona = inc.pos_exacta + Vector2.from_angle(randf() * TAU) * 200.0
+	inc.pos_zona = inc.pos_exacta + llamada_desvio
 	inc.radio_zona = 380.0
 	inc.nodo_aproximado = red.nodo_mas_cercano(inc.posicion_aproximada())
 	inc.tiempo_creacion = tiempo_juego
@@ -2421,6 +2698,8 @@ func _terminar_llamada() -> void:
 	incidentes.append(inc)
 	llamada = null
 	hud.notificar("Incidente %s creado: %s (%s)" % [inc.id_incidente, inc.titulo, inc.texto_precision()], COLOR_LLAMADA)
+	if cortada:
+		_rastrear_incidente(inc, llamada_linea)
 	_mostrar_incidente(inc)
 	_consejo("incidente", "Elige en la lista qué unidad enviar y pulsa X. Fíjate en los colores del hexágono: blanco ambulancia, azul policía, rojo bomberos.")
 	_programar(2.0, _sonar_llamada.bind(true))
@@ -2829,7 +3108,17 @@ func _comenzar_intervencion(v) -> void:
 			else:
 				_radio(v, "Llegamos de refuerzo. Todavía falta: %s." % inc.texto_requeridas())
 		_:
-			_radio(v, "Nos unimos a la intervención.")
+			if v.servicio == "ambulancia" and inc.t_ambulancia >= 0.0:
+				_radio(v, "Ambulancia en el lugar. Nos hacemos cargo del herido.")
+			elif v.servicio == "ambulancia" and not NO_TRASLADAN.has(v.bono) and _vir_en(inc) != null:
+				var vir = _vir_en(inc)
+				_radio(v, "Ambulancia de traslado en el lugar. Nos hacemos cargo del paciente.")
+				_radio(vir, "Ha llegado la ambulancia. Seguimos apoyando; si nos necesitas en otro aviso, mándanos (Cuadrado en la unidad).")
+				_consejo("vir_libre", "Cuando llega la ambulancia de traslado, el VIR o la moto sanitaria quedan de apoyo: puedes sacarlos y mandarlos a otro aviso desde la unidad o desde la otra emergencia.")
+			elif inc.refuerzos_avisados.has(v.servicio):
+				_radio(v, "¡Refuerzos en el lugar! Ahora irá más rápido.")
+			else:
+				_radio(v, "Nos unimos a la intervención.")
 
 
 ## Cuando llega el servicio principal, las unidades de primera respuesta se van.
@@ -2849,6 +3138,8 @@ func _iniciar_evento(inc, v) -> void:
 	inc.estado = "En intervención"
 	inc.progreso = minf(inc.progreso, TOPE_PRIMERA_RESPUESTA)   # lo avanzado por la primera respuesta
 	inc.duracion = inc.tiempo_intervencion + (inc.intensidad * 5.0 if inc.categoria == "fuego" else 0.0)
+	if inc.categoria == "busqueda":
+		inc.duracion *= 2.4   # buscar a alguien lleva tiempo (más patrullas y el perro lo acortan)
 	match inc.categoria:
 		"fuego":
 			_radio(v, "En el lugar. Comenzamos la extinción.")
@@ -2862,26 +3153,103 @@ func _iniciar_evento(inc, v) -> void:
 			_radio(v, "En el lugar. Hay una persona atrapada en el vehículo.")
 		_:
 			_radio(v, "En el lugar. Atendiendo al paciente.")
-	if inc.requeridas_cumplidas():
-		inc.evento = "en_curso"
-	else:
+	# Empiezan a trabajar siempre: los refuerzos los decides tú
+	inc.evento = "en_curso"
+	if inc.faltan_de("ambulancia") > 0 and inc.t_ambulancia < 0.0 and inc.refuerzos_avisados.has("ambulancia"):
+		# Ya la habían pedido antes de empezar: ahora corre el tiempo
+		inc.t_ambulancia = float(ESPERA_AMBULANCIA.get(opciones["dificultad"], 95.0))
+	if not inc.requeridas_cumplidas():
 		_pedir_refuerzos(inc)
 
 
+## Las unidades piden por radio lo que les vendría bien. No es obligatorio
+## mandarlo: sin refuerzos tardan más y hay más riesgo. Los heridos, en cambio,
+## necesitan una ambulancia: si no llega a tiempo, pueden morir.
 func _pedir_refuerzos(inc) -> void:
-	inc.evento = "refuerzos"
-	inc.t_refuerzos = 40.0
+	if inc.evento == "refuerzos":
+		inc.evento = "en_curso"
 	for sv in inc.requeridas:
 		if not inc.servicios.has(sv):
 			inc.servicios.append(sv)
-	var quien = inc.en_lugar[0] if inc.en_lugar.size() > 0 else null
-	var mensaje := "¡Necesitamos refuerzos! Falta: %s." % inc.texto_requeridas()
-	if quien != null:
-		_radio(quien, mensaje)
-	else:
-		hud.notificar("%s: %s" % [inc.id_incidente, mensaje], Color("ffd166"))
+	var quien = null
+	for v in inc.en_lugar:
+		if is_instance_valid(v) and v.incidente == inc:
+			quien = v
+			break
+	var hubo := false
+	for sv in inc.requeridas:
+		var f: int = inc.faltan_de(sv)
+		if f <= 0 or int(inc.refuerzos_avisados.get(sv, 0)) >= int(inc.requeridas[sv]):
+			continue
+		inc.refuerzos_avisados[sv] = int(inc.requeridas[sv])
+		var mensaje := ""
+		match sv:
+			"ambulancia":
+				mensaje = "¡Central, necesitamos una ambulancia aquí, hay heridos!" if f == 1 else "¡Central, necesitamos %d ambulancias, hay varios heridos!" % f
+				if inc.t_ambulancia < 0.0 and inc.evento == "en_curso":
+					inc.t_ambulancia = float(ESPERA_AMBULANCIA.get(opciones["dificultad"], 95.0))
+			"policia":
+				mensaje = "Central, nos vendría bien otra patrulla." if f == 1 else "Central, nos vendrían bien %d patrullas más." % f
+			"bomberos":
+				mensaje = "Central, nos vendría bien otra dotación de bomberos." if f == 1 else "Central, nos vendrían bien %d dotaciones más." % f
+			_:
+				mensaje = "Central, nos vendría bien apoyo de %s." % NOMBRES_SERVICIO.get(sv, sv).to_lower()
+		hubo = true
+		if quien != null:
+			_radio(quien, mensaje)
+		else:
+			hud.notificar("%s: %s" % [inc.id_incidente, mensaje], Color("ffd166"))
+		inc.registrar(_hora(segundos_sim), "Piden por radio: %s" % NOMBRES_SERVICIO.get(sv, sv))
+	if not hubo:
+		return
 	_sonido("alerta")
 	_vibrar(0.3, 0.6, 0.4)
+	if inc.t_ambulancia >= 0.0:
+		_consejo("ambulancia_heridos", "Cuando hay heridos, la ambulancia es urgente: el anillo rojo y blanco marca el tiempo que aguantan. Si no llega, pueden morir.")
+	else:
+		_consejo("refuerzos_libres", "Los refuerzos no son obligatorios: si no los mandas, la unidad sigue sola pero tarda más, y en peleas o robos hay más riesgo de heridos y de que alguien escape.")
+
+
+## Se acabó el tiempo esperando la ambulancia.
+func _sin_ambulancia(inc) -> void:
+	inc.t_ambulancia = -1.0
+	var hay: int = int(inc.presentes.get("ambulancia", 0))
+	if hay > 0:
+		inc.requeridas["ambulancia"] = hay
+	else:
+		inc.requeridas.erase("ambulancia")
+		inc.servicios.erase("ambulancia")
+		inc.traslado = false
+	var prob: float = {"tranquila": 0.25, "normal": 0.6, "caotica": 0.8}.get(opciones["dificultad"], 0.6)
+	if _alguno_con_bono(inc, "pma"):
+		prob *= 0.3
+	elif _alguno_con_bono(inc, "vir") or _alguno_con_bono(inc, "moto_sanitaria"):
+		prob *= 0.5
+	var quien = null
+	for v in inc.en_lugar:
+		if is_instance_valid(v) and v.incidente == inc:
+			quien = v
+			break
+	var texto := ""
+	if randf() < prob:
+		inc.fallecidos = maxi(inc.fallecidos, 1)
+		texto = "Central... la ambulancia no ha llegado a tiempo. No hemos podido hacer nada por el herido."
+		inc.resultado_mal = "El herido ha fallecido esperando una ambulancia."
+	else:
+		inc.ajuste_estrellas -= 1
+		inc.marcas.append("herido_grave")
+		texto = "La ambulancia no llega: el herido está muy grave, se lo lleva una ambulancia de Ciudad Real."
+	if quien != null:
+		_radio(quien, texto)
+	else:
+		hud.notificar("%s: %s" % [inc.id_incidente, texto], Color("ff8a65"))
+	inc.registrar(_hora(segundos_sim), texto)
+	_sonido("alerta")
+	_vibrar(0.6, 0.9, 0.6)
+	if inc.evento == "en_curso" and inc.progreso >= 0.99:
+		_finalizar_evento(inc, inc.fallecidos == 0)
+	elif inc.fallecidos > 0 and inc.evento == "en_curso":
+		_finalizar_evento(inc, false)
 
 
 ## Avanza los mini eventos "En el lugar" que estén en marcha.
@@ -2896,13 +3264,45 @@ func _actualizar_eventos(delta: float) -> void:
 				inc.refuerzo_pedido = true
 				_quizas_mas_refuerzos(inc)
 			if inc.evento == "en_curso" and inc.progreso >= 1.0:
-				_finalizar_evento(inc, true)
+				if inc.faltan_de("ambulancia") > 0:
+					# Ya han terminado, pero el herido necesita una ambulancia
+					inc.progreso = 0.99
+					if not inc.esperando_ambulancia:
+						inc.esperando_ambulancia = true
+						var q = inc.en_lugar[0] if inc.en_lugar.size() > 0 else null
+						if q != null and is_instance_valid(q):
+							_radio(q, "Aquí ya está todo controlado, pero el herido necesita una ambulancia. ¿Cuánto le falta?")
+				else:
+					_finalizar_evento(inc, true)
 		elif inc.evento == "refuerzos":
-			inc.t_refuerzos -= delta
-			if inc.t_refuerzos <= 0.0:
-				_finalizar_evento(inc, false)
+			inc.evento = "en_curso"
 		elif inc.evento == "tramites":
 			inc.progreso = minf(inc.progreso + delta / DURACION_TRAMITES, 0.99)
+
+
+## Heridos esperando ambulancia: cuenta atrás.
+func _vigilar_ambulancias(delta: float) -> void:
+	for inc in incidentes.duplicate():
+		if inc.t_ambulancia < 0.0 or not inc.activo():
+			continue
+		if inc.faltan_de("ambulancia") == 0:
+			inc.t_ambulancia = -1.0
+			inc.esperando_ambulancia = false
+			continue
+		var factor := 1.0
+		if _alguno_con_bono(inc, "pma"):
+			factor = 0.4
+		elif _alguno_con_bono(inc, "vir") or _alguno_con_bono(inc, "moto_sanitaria"):
+			factor = 0.6
+		elif inc.unidades_en_escena().size() > 0:
+			factor = 0.85   # alguien le hace los primeros auxilios
+		var antes: float = inc.t_ambulancia
+		inc.t_ambulancia -= delta * factor
+		if antes > 30.0 and inc.t_ambulancia <= 30.0:
+			hud.notificar("%s: ¡el herido empeora! Hace falta una ambulancia YA." % inc.id_incidente, Color("ff6b6b"))
+			_sonido("alerta")
+		if inc.t_ambulancia <= 0.0:
+			_sin_ambulancia(inc)
 
 
 ## Más personal y mejor equipo = la intervención va más rápida.
@@ -2940,12 +3340,22 @@ func _ritmo(inc) -> float:
 		r *= 1.3
 	if _alguno_con_bono(inc, "canino") and inc.categoria in ["busqueda", "control"]:
 		r *= 1.5
+	if inc.categoria == "busqueda":
+		var patrullas := 0
+		for v in inc.unidades_en_escena():
+			if v.servicio in ["policia", "proteccion_civil"]:
+				patrullas += 1
+		r *= 1.0 + 0.35 * maxi(patrullas - 1, 0)
 	if _alguno_con_bono(inc, "vir") and inc.categoria in ["medico", "atrapado"]:
 		r *= 1.2
 	if _alguno_con_bono(inc, "moto_sanitaria") and inc.evento_pueblo != "":
 		r *= 1.5
 	if _alguno_con_bono(inc, "pma") and inc.heridos >= 2:
 		r *= 1.0 + 0.3 * mini(inc.heridos, 3)
+	# Sin los refuerzos que piden, trabajan más despacio (según la dificultad)
+	var faltan: int = inc.faltan_apoyo()
+	if faltan > 0:
+		r *= pow(float(PENALIZA_SIN_REFUERZO.get(opciones["dificultad"], 0.65)), faltan)
 	match inc.categoria:
 		"fuego":
 			if _alguno_tiene(inc, "extincion"):
@@ -2999,13 +3409,26 @@ func _quizas_mas_refuerzos(inc) -> void:
 		"medico":
 			servicio = "ambulancia"
 			prob = 0.15
-	if servicio == "" or randf() >= prob:
-		return
-	inc.requeridas[servicio] = int(inc.requeridas.get(servicio, 0)) + 1
-	_pedir_refuerzos(inc)
+	var cambia := false
+	if servicio != "" and randf() < prob:
+		inc.requeridas[servicio] = int(inc.requeridas.get(servicio, 0)) + 1
+		cambia = true
+	# En peleas y robos puede haber heridos (navajas, golpes) que necesitan ambulancia
+	if inc.categoria in ["pelea", "robo"] and not inc.requeridas.has("ambulancia"):
+		var p_herido := 0.4 if turno == "noche" else 0.25
+		if randf() < p_herido:
+			inc.requeridas["ambulancia"] = 1
+			inc.traslado = true
+			inc.heridos = maxi(inc.heridos, 1)
+			inc.informacion.append("Hay un herido en el lugar")
+			cambia = true
+	if cambia:
+		_pedir_refuerzos(inc)
 
 
 func _finalizar_evento(inc, exito: bool) -> void:
+	if exito and inc.historia == null and inc.empeorado and inc.categoria in ["pelea", "robo"] and randf() < 0.45:
+		exito = false   # se llegó tarde: los implicados se han ido
 	inc.evento = "terminado"
 	inc.exito = exito
 	inc.estado = "Resuelta"
@@ -3019,8 +3442,11 @@ func _finalizar_evento(inc, exito: bool) -> void:
 		_final_historia(inc)
 		inc.registrar(_hora(segundos_sim), "Final: %s" % inc.resultado)
 	# Riesgo de que algún agente resulte herido
+	var pocos: bool = inc.faltan_apoyo() > 0
 	if inc.categoria in ["pelea", "robo"]:
 		var riesgo := 0.6 if not exito else 0.1
+		if pocos:
+			riesgo += 0.25   # pocos agentes: más riesgo
 		if _alguno_tiene(inc, "chaleco"):
 			riesgo *= 0.4
 		if randf() < riesgo:
@@ -3030,17 +3456,30 @@ func _finalizar_evento(inc, exito: bool) -> void:
 					stats["heridos"] += 1
 					inc.resultado += " Un agente de %s ha resultado herido." % v.id_unidad
 					break
-	if inc.historia == null and inc.fallecidos == 0 and not exito:
-		# Sin historia: si la espera fue demasiado larga, alguien puede morir
-		var riesgo := 0.45
-		if _alguno_con_bono(inc, "pma"):
-			riesgo = 0.1
-		elif _alguno_con_bono(inc, "vir"):
-			riesgo = 0.25
-		if inc.categoria in ["medico", "atrapado"] and inc.empeorado and randf() < riesgo:
+	if inc.historia == null and inc.fallecidos == 0:
+		# Sin historia: si se llegó tarde o se dieron malas instrucciones por
+		# teléfono, alguien puede morir (según la dificultad).
+		var riesgo := 0.0
+		if inc.categoria in ["medico", "atrapado"]:
+			if inc.empeorado:
+				riesgo = float(RIESGO_MUERTE.get(opciones["dificultad"], 0.3))
+			if inc.marcas.has("consejo_malo"):
+				riesgo += 0.08 if not inc.empeorado else 0.15
+			if inc.marcas.has("herido_grave"):
+				riesgo += 0.2
+			if inc.marcas.has("consejo_bueno") or inc.marcas.has("rcp"):
+				riesgo *= 0.6
+			if _alguno_con_bono(inc, "pma"):
+				riesgo *= 0.3
+			elif _alguno_con_bono(inc, "vir") or _alguno_con_bono(inc, "medico"):
+				riesgo *= 0.6
+		elif inc.categoria == "fuego" and inc.intensidad >= 3 and inc.empeorado:
+			riesgo = 0.3
+		elif inc.categoria == "pelea" and inc.requeridas.has("ambulancia") and inc.empeorado:
+			riesgo = 0.15
+		if riesgo > 0.0 and randf() < riesgo:
 			inc.fallecidos = 1
-		elif inc.categoria == "fuego" and inc.intensidad >= 3 and randf() < 0.3:
-			inc.fallecidos = 1
+			inc.resultado = "A pesar de los esfuerzos, el paciente ha fallecido." if inc.empeorado else "El paciente ha empeorado de golpe y ha fallecido."
 	if inc.fallecidos > 0:
 		_abrir_tramites(inc)
 		return
@@ -3051,6 +3490,10 @@ func _finalizar_evento(inc, exito: bool) -> void:
 		sospechoso.queue_free()
 		sospechoso = null
 	_calcular_detenidos(inc, exito)
+	if pocos and inc.detenidos >= 1 and inc.categoria in ["pelea", "robo", "control"] and randf() < 0.45:
+		inc.detenidos -= 1
+		inc.escapado = true
+		inc.resultado += " Con tan pocos agentes, uno de los implicados ha conseguido escapar."
 	if inc.traslado and exito:
 		var puede := false
 		for v in inc.en_lugar:
@@ -3060,6 +3503,7 @@ func _finalizar_evento(inc, exito: bool) -> void:
 			inc.traslado = false
 			inc.resultado += " Paciente estabilizado: lo recoge una ambulancia de Ciudad Real."
 	_informe_incidente(inc)
+	_retirar_en_camino(inc)
 	for a in inc.apoyos:
 		if is_instance_valid(a) and a.incidente == inc:
 			a.servicios_seguidos += 1
@@ -3261,6 +3705,7 @@ func _abrir_tramites(inc) -> void:
 			v.servicios_seguidos += 1
 			_regresar(v)
 	inc.apoyos.clear()
+	_retirar_en_camino(inc, policia == null)
 	inc.en_lugar = [policia] if policia != null else []
 	inc.servicios = ["policia"]
 	inc.servicio_necesario = "policia"
@@ -3302,6 +3747,7 @@ func _fin_tramites(inc) -> void:
 	inc.estado = "Resuelta"
 	inc.progreso = 1.0
 	inc.resultado += " Trámites completados: declaración, juzgado y levantamiento."
+	_retirar_en_camino(inc)
 	for v in inc.en_lugar.duplicate():
 		if is_instance_valid(v) and v.incidente == inc:
 			_radio(v, "Trámites terminados. Quedamos disponibles.")
@@ -3332,6 +3778,26 @@ func _texto_resultado(inc, exito: bool) -> String:
 				return "Sin alcoholímetro no se ha podido hacer la prueba de alcoholemia."
 			return "Conductor multado por exceso de velocidad."
 	return "Paciente estabilizado." if exito else "El paciente está grave por la espera."
+
+
+func _vir_en(inc):
+	for o in inc.en_lugar:
+		if is_instance_valid(o) and o.incidente == inc and o.bono in ["vir", "moto_sanitaria"]:
+			return o
+	return null
+
+
+## Las unidades que aún iban de camino a un aviso ya terminado dan la vuelta.
+func _retirar_en_camino(inc, salvo_policia := false) -> void:
+	for v in inc.unidades.duplicate():
+		if not is_instance_valid(v) or v.incidente != inc:
+			continue
+		if not (v.fase in ["ida", "buscando", "buscando2"]):
+			continue
+		if salvo_policia and v.servicio == "policia":
+			continue
+		_radio(v, "Recibido: el aviso ya está resuelto. Damos la vuelta y volvemos a base.")
+		_regresar(v)
 
 
 func _trasladar(v) -> void:
@@ -3472,11 +3938,11 @@ func _vigilar_urgencias() -> void:
 ## izquierda de la pantalla y aparece directamente en el mapa.
 func _aviso_directo(forzar_id: String = "", titulo: String = "") -> void:
 	var posibles := []
-	for d in DatosLlamadas.LLAMADAS:
+	for d in todas_llamadas:
 		if forzar_id != "":
 			if d["id"] == forzar_id:
 				posibles.append(d)
-		elif not d.get("falsa", false) and (d["turno"] == turno or d["turno"] == "ambos"):
+		elif not d.get("falsa", false) and not d.has("linea") and (d["turno"] == turno or d["turno"] == "ambos"):
 			posibles.append(d)
 	if posibles.is_empty():
 		return
@@ -3515,6 +3981,28 @@ func _aviso_directo(forzar_id: String = "", titulo: String = "") -> void:
 	hud.notificar("NUEVO AVISO %s: %s en %s. Pulsa Triángulo para verlo." % [inc.id_incidente, inc.titulo, calle], Color("9ff3ff"))
 	_sonido("alerta")
 	_consejo("aviso_directo", "Las emergencias menores llegan como aviso y aparecen solas en el mapa, sin llamada. Ábrelas con Triángulo y manda la unidad.")
+
+
+## Fallecimiento natural en un domicilio: el sanitario certifica y empiezan
+## los trámites (juzgado, forense y funeraria).
+func _aviso_muerte_natural() -> void:
+	if en_menu or turno_terminando:
+		return
+	var casos := [
+		["Persona mayor encontrada sin vida en su casa", "La vecina no la veía desde ayer y no abre la puerta"],
+		["Hombre que no despierta en su cama", "Su mujer dice que está frío y no respira"],
+		["Anciano desplomado en el huerto", "Lo ha encontrado su nieto, no responde"],
+		["Mujer sin pulso en una residencia", "La auxiliar de noche pide una ambulancia"],
+	]
+	var c: Array = casos[randi() % casos.size()]
+	var d := {"titulo": c[0], "servicios": ["ambulancia", "policia"], "principal": "ambulancia",
+		"urgencia": 90.0, "intervencion": 7.0, "categoria": "medico", "info": [c[1]], "requeridas": {"ambulancia": 1}}
+	var l := _elegir_lugar(["edificio", "plaza", "iglesia", "parque"])
+	var nodo := int(l.get("nodo", red.nodo_mas_cercano(tamano_mapa / 2.0)))
+	d["fallecido"] = true
+	var inc = _nuevo_aviso(d, nodo, String(l.get("nombre", "")), "Aviso de un familiar")
+	inc.resultado_bien = "El médico certifica el fallecimiento por causas naturales."
+	inc.resultado_mal = "El médico certifica el fallecimiento por causas naturales."
 
 
 # ================================================================ AVISOS DE LAS PATRULLAS
@@ -3662,7 +4150,7 @@ func _crear_aviso_trafico(nodo_forzado: int = -1, titulo: String = "", info: Arr
 		hud.notificar("AVISO AUTOMÁTICO: vehículo a %d km/h en %s. Pulsa Triángulo para verlo." % [medida, calle_inicio], COLOR_SISTEMA)
 	else:
 		inc.fuente = "Huida tras un robo"
-		sospechoso.velocidad = 58.0
+		sospechoso.velocidad = 66.0
 		sospechoso_acelero = true
 	_sonido("alerta")
 	_programar(60.0, _aviso_caduca.bind(inc))
@@ -3709,7 +4197,7 @@ func _vigilar_persecucion() -> void:
 	for v in vehiculos:
 		if v.perseguir == sospechoso and v.bono != "camuflado" and v.position.distance_to(sospechoso.position) < 300.0:
 			sospechoso_acelero = true
-			sospechoso.velocidad = 58.0
+			sospechoso.velocidad = 66.0
 			_radio(v, "¡El vehículo acelera al vernos! Seguimos detrás.")
 			return
 
@@ -3784,12 +4272,14 @@ func _on_sospechoso_llega(v) -> void:
 # ================================================================ SONIDO
 
 func _crear_sonidos() -> void:
-	for nombre in ["llamada", "radio", "alerta", "envio", "click", "sirena"]:
+	for nombre in ["llamada", "radio", "alerta", "envio", "click", "sirena", "pitido"]:
 		var reproductor := AudioStreamPlayer.new()
 		var ruta := "res://assets/audio/%s.wav" % nombre
 		if ResourceLoader.exists(ruta):
 			reproductor.stream = load(ruta)
 		reproductor.volume_db = -4.0 if nombre != "sirena" else -8.0
+		if nombre == "pitido":
+			reproductor.volume_db = -12.0
 		add_child(reproductor)
 		sonidos[nombre] = reproductor
 	sonidos["llamada"].finished.connect(_repetir_tono)
