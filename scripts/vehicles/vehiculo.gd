@@ -40,6 +40,8 @@ var cansancio := 0.0          # 0-100: sube con cada servicio y baja descansando
 var formacion := 0            # cursos de formación (0-2): trabajan más rápido
 var externo := false          # Guardia Civil o UME: vienen de fuera y se van al terminar
 var tripulacion: Array = []   # nombres del personal
+var detenidos_a_bordo := 0    # detenidos que lleva al calabozo
+var t_radar := 0.0            # coche camuflado: tiempo para la próxima multa de radar
 var estado := "Disponible"   # Disponible, Patrullando, En desplazamiento, Buscando el lugar, En intervención, Traslado al hospital, Regresando, Persecución
 var fase := ""               # uso interno de la central
 var velocidad := 60.0        # velocidad máxima EN EMERGENCIA (metros por segundo real)
@@ -144,7 +146,9 @@ func velocidad_actual() -> float:
 	var v := velocidad
 	v *= 1.0 - cansancio / 400.0   # el cansancio hace que vayan algo más lentos
 	if estado == "Reponiendo material":
-		v *= FACTOR_REPONER   # sin material: vuelve a la base con prisa, sin sirenas
+		v *= FACTOR_REPONER
+	elif estado == "Trasladando detenido":
+		v *= 0.7   # sin material: vuelve a la base con prisa, sin sirenas
 	elif not en_emergencia:
 		v *= FACTOR_PATRULLA if estado == "Patrullando" else FACTOR_SIN_EMERGENCIA
 	return v * factor_trafico
@@ -244,6 +248,9 @@ const COLORES_PLACA := {
 	"proteccion_civil": [Color("ff8c1a"), Color("1e3a8a")],   # placa naranja
 	"guardia_civil": [Color("2e7d4f"), Color("ffffff")],       # verde
 	"ume": [Color("d4a017"), Color("1e1e1e")],                 # amarillo
+	"camuflado": [Color("5b6170"), Color("ffffff")],           # gris, sin colores de policía
+	"vir": [Color("f2f6fc"), Color("27ae60")],                 # blanco con icono verde
+	"pma": [Color("f2f6fc"), Color("e67e22")],                 # blanco con icono naranja
 	"ambulancia": [Color("f2f6fc"), Color("d63031")],   # placa blanca, icono rojo
 	"policia": [Color("3b8eea"), Color("ffffff")],      # placa azul
 	"bomberos": [Color("d64545"), Color("ffffff")],     # placa roja
@@ -254,6 +261,7 @@ const COLORES_ESTADO := {
 	"Buscando el lugar": Color("e67e22"), "En intervención": Color("e74c3c"),
 	"Persecución": Color("a569bd"), "Regresando": Color("5dade2"),
 	"Patrullando": Color("27ae60"), "Traslado al hospital": Color("9b59b6"),
+	"Trasladando detenido": Color("8e44ad"), "Reponiendo material": Color("b7950b"),
 }
 
 

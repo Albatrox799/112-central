@@ -20,11 +20,14 @@ func _ready() -> void:
 	_boton("depuracion", JOY_BUTTON_BACK, [KEY_F1])
 	_boton("categoria_anterior", JOY_BUTTON_LEFT_SHOULDER, [KEY_Q])
 	_boton("categoria_siguiente", JOY_BUTTON_RIGHT_SHOULDER, [KEY_R])
-	# Moverse por las listas de los menús (cruceta o joystick)
-	_boton("nav_abajo", JOY_BUTTON_DPAD_DOWN, [KEY_DOWN])
-	_boton("nav_arriba", JOY_BUTTON_DPAD_UP, [KEY_UP])
-	_eje("nav_abajo", JOY_AXIS_LEFT_Y, 1.0, [])
-	_eje("nav_arriba", JOY_AXIS_LEFT_Y, -1.0, [])
+	# Moverse por las listas de los menús (cruceta o joystick) y abrir la comisaría
+	_asegurar("nav_abajo", ZONA_MUERTA_NAV)
+	_asegurar("nav_arriba", ZONA_MUERTA_NAV)
+	_asegurar("abrir_comisaria", ZONA_MUERTA_NAV)
+	_teclas("nav_abajo", [KEY_DOWN])
+	_teclas("nav_arriba", [KEY_UP])
+	_teclas("abrir_comisaria", [KEY_C])
+	aplicar_cruceta(CRUCETA_DEFECTO["arriba"], CRUCETA_DEFECTO["abajo"], CRUCETA_DEFECTO["izquierda"])
 
 	# Acciones con ejes (joystick izquierdo y gatillos)
 	_eje("mover_izquierda", JOY_AXIS_LEFT_X, -1.0, [KEY_A, KEY_LEFT])
@@ -52,55 +55,117 @@ func cargar_configuracion() -> bool:
 	var can: int = cfg.get_value("mando", "cancelar", -1)
 	if sel < 0 or can < 0:
 		return false
+	boton_sel = sel
+	boton_can = can
 	aplicar_botones(sel, can)
-	var abajo: Dictionary = cfg.get_value("mando", "nav_abajo", {})
-	var arriba: Dictionary = cfg.get_value("mando", "nav_arriba", {})
-	if abajo.is_empty() or arriba.is_empty():
-		return false   # falta configurar la cruceta
-	aplicar_navegacion(abajo, arriba)
+	# La cruceta (versión 0.96). La configuración antigua de las versiones
+	# anteriores se ignora: podía tener la misma flecha guardada dos veces.
+	var arriba: Dictionary = cfg.get_value("mando", "cruceta_arriba", {})
+	var abajo: Dictionary = cfg.get_value("mando", "cruceta_abajo", {})
+	var izquierda: Dictionary = cfg.get_value("mando", "cruceta_izquierda", {})
+	if not arriba.is_empty() and not abajo.is_empty() and not izquierda.is_empty():
+		aplicar_cruceta(arriba, abajo, izquierda)
 	return true
 
 
-## La cruceta puede llegar como botón o como eje según el mando y el sistema.
-## dato = {"tipo": "boton", "indice": 12} o {"tipo": "eje", "indice": 7, "valor": 1.0}
-func guardar_navegacion(abajo: Dictionary, arriba: Dictionary) -> void:
-	aplicar_navegacion(abajo, arriba)
+# ------------------------------------------------------------------
+# CRUCETA
+# Puede llegar como botón o como eje según el mando y el sistema.
+# dato = {"tipo": "boton", "indice": 11} o {"tipo": "eje", "indice": 7, "valor": -1.0}
+
+const ZONA_MUERTA_NAV := 0.6
+const CRUCETA_DEFECTO := {
+	"arriba": {"tipo": "boton", "indice": JOY_BUTTON_DPAD_UP},       # 11
+	"abajo": {"tipo": "boton", "indice": JOY_BUTTON_DPAD_DOWN},      # 12
+	"izquierda": {"tipo": "boton", "indice": JOY_BUTTON_DPAD_LEFT},  # 13
+}
+var boton_sel := -1
+var boton_can := -1
+
+
+func guardar_cruceta(arriba: Dictionary, abajo: Dictionary, izquierda: Dictionary) -> void:
+	aplicar_cruceta(arriba, abajo, izquierda)
 	var cfg := ConfigFile.new()
 	cfg.load(RUTA_CONFIG)
-	cfg.set_value("mando", "nav_abajo", abajo)
-	cfg.set_value("mando", "nav_arriba", arriba)
+	cfg.set_value("mando", "cruceta_arriba", arriba)
+	cfg.set_value("mando", "cruceta_abajo", abajo)
+	cfg.set_value("mando", "cruceta_izquierda", izquierda)
 	cfg.save(RUTA_CONFIG)
 
 
-func aplicar_navegacion(abajo: Dictionary, arriba: Dictionary) -> void:
-	for par in [["nav_abajo", abajo], ["nav_arriba", arriba], ["ui_down", abajo], ["ui_up", arriba]]:
+## Vuelve a la cruceta normal (arriba 11, abajo 12, izquierda 13).
+func restablecer_cruceta() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(RUTA_CONFIG)
+	for k in ["cruceta_arriba", "cruceta_abajo", "cruceta_izquierda", "nav_arriba", "nav_abajo"]:
+		if cfg.has_section_key("mando", k):
+			cfg.erase_section_key("mando", k)
+	cfg.save(RUTA_CONFIG)
+	aplicar_cruceta(CRUCETA_DEFECTO["arriba"], CRUCETA_DEFECTO["abajo"], CRUCETA_DEFECTO["izquierda"])
+
+
+## Borra lo que hubiera del mando en estas acciones y pone solo lo nuevo
+## (así un mismo botón nunca puede ser dos flechas a la vez).
+func aplicar_cruceta(arriba: Dictionary, abajo: Dictionary, izquierda: Dictionary) -> void:
+	var pares := [["nav_arriba", arriba], ["ui_up", arriba], ["nav_abajo", abajo], ["ui_down", abajo], ["abrir_comisaria", izquierda]]
+	for par in pares:
 		var accion: String = par[0]
-		var dato: Dictionary = par[1]
 		if not InputMap.has_action(accion):
 			continue
-		var e: InputEvent
-		if dato.get("tipo", "") == "tecla":
-			var k := InputEventKey.new()
-			k.keycode = int(dato["indice"])
-			e = k
-		elif dato.get("tipo", "") == "eje":
+		InputMap.action_set_deadzone(accion, ZONA_MUERTA_NAV)
+		for e in InputMap.action_get_events(accion):
+			if e is InputEventJoypadButton or e is InputEventJoypadMotion:
+				InputMap.action_erase_event(accion, e)
+			elif e is InputEventKey and par[1].get("tipo", "") == "tecla" and e.keycode == int(par[1].get("indice", -1)):
+				InputMap.action_erase_event(accion, e)
+	for par in pares:
+		var accion: String = par[0]
+		if not InputMap.has_action(accion):
+			continue
+		InputMap.action_add_event(accion, _evento_de(par[1]))
+	# El joystick izquierdo también sirve para subir y bajar (necesita un empujón claro)
+	for par in [["nav_arriba", -1.0], ["ui_up", -1.0], ["nav_abajo", 1.0], ["ui_down", 1.0]]:
+		if InputMap.has_action(par[0]):
 			var m := InputEventJoypadMotion.new()
-			m.axis = int(dato["indice"])
-			m.axis_value = float(dato["valor"])
+			m.axis = JOY_AXIS_LEFT_Y
+			m.axis_value = par[1]
 			m.device = -1
-			e = m
-		else:
-			var b := InputEventJoypadButton.new()
-			b.button_index = int(dato.get("indice", 0))
-			b.device = -1
-			e = b
-		if not InputMap.action_has_event(accion, e):
-			InputMap.action_add_event(accion, e)
+			InputMap.action_add_event(par[0], m)
+
+
+func _evento_de(dato: Dictionary) -> InputEvent:
+	if dato.get("tipo", "") == "tecla":
+		var k := InputEventKey.new()
+		k.keycode = int(dato["indice"])
+		return k
+	if dato.get("tipo", "") == "eje":
+		var m := InputEventJoypadMotion.new()
+		m.axis = int(dato["indice"])
+		m.axis_value = float(dato["valor"])
+		m.device = -1
+		return m
+	var b := InputEventJoypadButton.new()
+	b.button_index = int(dato.get("indice", 0))
+	b.device = -1
+	return b
+
+
+## Texto para enseñar al jugador qué llega al pulsar.
+func describir(dato: Dictionary) -> String:
+	match String(dato.get("tipo", "")):
+		"tecla":
+			return "tecla %s" % OS.get_keycode_string(int(dato["indice"]))
+		"eje":
+			return "eje %d (%s)" % [int(dato["indice"]), "+" if float(dato["valor"]) > 0.0 else "-"]
+	return "botón %d" % int(dato.get("indice", -1))
 
 
 func guardar_configuracion(sel: int, can: int) -> void:
+	boton_sel = sel
+	boton_can = can
 	aplicar_botones(sel, can)
 	var cfg := ConfigFile.new()
+	cfg.load(RUTA_CONFIG)
 	cfg.set_value("mando", "seleccionar", sel)
 	cfg.set_value("mando", "cancelar", can)
 	cfg.save(RUTA_CONFIG)

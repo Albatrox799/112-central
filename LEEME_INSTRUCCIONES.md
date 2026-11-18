@@ -28,6 +28,26 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 0.96.1
+
+- **Comisión por multas:** cada multa tiene su importe según la infracción (aparcamiento 90 €, ruido 300 €, alcoholemia 500 €, velocidad de 100 a 600 € según el exceso). La central se lleva una comisión del 30 % en prácticas, que sube un 5 % con cada rango hasta el 50 %. Se ve en el informe y en el resumen del turno, y también cuentan las multas del radar del coche camuflado.
+
+## Novedades de la versión 0.96
+
+- **Cruceta arreglada:** se ignora la configuración antigua, que tenía arriba guardado también como abajo. Ahora arriba es el botón 11, abajo el 12 e izquierda el 13. En Pausa u Opciones están «Configurar solo la cruceta» (pide arriba, abajo e izquierda y te enseña los números antes de guardar) y «Restablecer la cruceta».
+- **Comisaría con la cruceta izquierda:** las denuncias se acumulan (máximo 4) y arriba pone cuántas hay. Al abrirla, el juego se pausa. Ya no salen en el menú de emergencias.
+- **Panel de llamada más pequeño:** siempre se ven todas las respuestas.
+- **Refuerzos que se quedan:** las unidades que mandas de más ayudan hasta el final.
+- **La policía en avisos que no son suyos:** si llega primero, atiende despacio al herido (manta y botiquín). Cuando llegan los sanitarios o los bomberos, corta el tráfico con conos y todo va más rápido.
+- **Multas y detenidos:** según el delito, multa en el sitio o detenido al calabozo de la C/ Lentejuela. La patrulla queda «Trasladando detenido» hasta dejarlo. Hay un logro nuevo: «Calabozo lleno».
+- **Vehículos nuevos en la tienda:** coche camuflado, unidad canina, VIR, moto sanitaria y Puesto Médico Avanzado.
+
+## Versión 0.95.1 · Actualizar sin desinstalar
+
+- El APK se firma siempre con la misma clave (carpeta `firma`) y cada versión lleva un número mayor. A partir de ahora el Fire TV deja **actualizar encima**, sin borrar el juego ni la partida.
+- **Solo esta vez** hay que desinstalar la versión vieja antes de instalar, porque las anteriores estaban firmadas con otra clave.
+- Importante: sube siempre también la carpeta `firma` a GitHub y no la borres.
+
 ## Novedades de las versiones 0.9 y 0.95
 
 **Arreglos**

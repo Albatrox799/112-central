@@ -53,6 +53,9 @@ var ll_caja_info: VBoxContainer
 var ll_scroll_historial: ScrollContainer
 var ll_historial: VBoxContainer
 var ll_saltar: Label
+var ll_scroll_opciones: ScrollContainer
+var _seguro_nav := {"abajo": false, "arriba": false}
+var etiqueta_comisaria: Label
 var ll_precision: Control
 var icono_llamada: Control
 var tecleo: AudioStreamPlayer
@@ -168,7 +171,7 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.95", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.96.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
 
 
 # ---------------------------------------------------------------- PANTALLA DE CARGA
@@ -424,6 +427,20 @@ func _input(event: InputEvent) -> void:
 			return
 	var abajo := event.is_action_pressed("nav_abajo")
 	var arriba := event.is_action_pressed("nav_arriba")
+	# Joystick o cruceta como eje: un movimiento solo cuenta una vez hasta soltar
+	if event is InputEventJoypadMotion:
+		if abajo:
+			if _seguro_nav["abajo"]:
+				abajo = false
+			_seguro_nav["abajo"] = true
+		elif event.is_action("nav_abajo"):
+			_seguro_nav["abajo"] = false
+		if arriba:
+			if _seguro_nav["arriba"]:
+				arriba = false
+			_seguro_nav["arriba"] = true
+		elif event.is_action("nav_arriba"):
+			_seguro_nav["arriba"] = false
 	if not abajo and not arriba:
 		return
 	var lista: Node = null
@@ -538,6 +555,11 @@ func _actualizar_vista_lugar() -> void:
 		vista_lugar.inc = lugar_inc
 		vista_lugar.final = lugar_final
 	vista_lugar.visible = mostrar
+
+
+func set_comisaria(pendientes: int) -> void:
+	etiqueta_comisaria.visible = pendientes > 0
+	etiqueta_comisaria.text = "COMISARÍA: %d denuncia%s (cruceta izquierda)" % [pendientes, "" if pendientes == 1 else "s"]
 
 
 func set_clima(texto: String, color: Color) -> void:
@@ -686,8 +708,11 @@ func actualizar_llamada(cabecera: String, texto: String, calma: int, estado: Str
 	ll_info.text = "Datos obtenidos:\n" + datos
 	_vaciar(ll_opciones)
 	_textos_opciones = opciones.duplicate()
+	ll_scroll_opciones.custom_minimum_size = Vector2(0, clampf(opciones.size() * 44.0, 44.0, 200.0))
 	for i in opciones.size():
 		var b := _boton("%d. %s" % [i + 1, opciones[i]])
+		b.custom_minimum_size = Vector2(0, 40)
+		b.add_theme_font_size_override("font_size", 17)
 		var op := String(opciones[i])
 		if op.begins_with("[Terminar") or op.begins_with("[Colgar"):
 			b.text = "FINALIZAR LLAMADA" if op == "[Colgar]" else "FINALIZAR LLAMADA Y CREAR EL INCIDENTE"
@@ -696,7 +721,7 @@ func actualizar_llamada(cabecera: String, texto: String, calma: int, estado: Str
 			b.add_theme_stylebox_override("hover", _caja(Color("8e1f1f"), 2, 12, Color("ff6b6b"), 8))
 		b.pressed.connect(_al_elegir.bind(i))
 		ll_opciones.add_child(b)
-	ll_opciones.visible = not escribiendo()
+	ll_scroll_opciones.visible = not escribiendo()
 	ll_saltar.visible = escribiendo()
 	if pestana_llamada != 0:
 		_elegir_pestana(0)
@@ -744,7 +769,8 @@ func saltar_texto() -> void:
 
 func _texto_terminado() -> void:
 	ll_texto.text = _texto_completo
-	ll_opciones.visible = true
+	ll_scroll_opciones.visible = true
+	ll_scroll_opciones.scroll_vertical = 0
 	ll_saltar.visible = false
 	call_deferred("_ajustar", ventana_llamada)
 	if pestana_llamada == 0:
@@ -885,6 +911,9 @@ func _crear_barra_superior() -> void:
 	fila.add_child(etiqueta_pausa)
 	etiqueta_dinero = _etiqueta("", 24, Color("6ee7b7"))
 	fila.add_child(etiqueta_dinero)
+	etiqueta_comisaria = _etiqueta("", 20, Color("8ec5ff"))
+	etiqueta_comisaria.visible = false
+	fila.add_child(etiqueta_comisaria)
 	etiqueta_clima = _etiqueta("", 22, Color("9fd3ff"))
 	fila.add_child(etiqueta_clima)
 	etiqueta_velocidad = _etiqueta("Tiempo x1", 22, Color("9fb3c8"))
@@ -940,6 +969,7 @@ const COLORES_ESTADO := {
 	"Persecución": Color("8e44ad"), "Regresando": Color("2471a3"),
 	"Patrullando": Color("1e8449"), "Traslado al hospital": Color("7d3c98"),
 	"Reponiendo material": Color("b7950b"), "Sin personal": Color("555555"),
+	"Trasladando detenido": Color("8e44ad"),
 }
 
 
@@ -1075,22 +1105,29 @@ func _crear_ventana_llamada() -> void:
 	ll_caja_dialogo.add_theme_constant_override("separation", 8)
 	v.add_child(ll_caja_dialogo)
 	ll_scroll_historial = ScrollContainer.new()
-	ll_scroll_historial.custom_minimum_size = Vector2(0, 236)
+	ll_scroll_historial.custom_minimum_size = Vector2(0, 104)
 	ll_scroll_historial.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	ll_caja_dialogo.add_child(ll_scroll_historial)
 	ll_historial = VBoxContainer.new()
 	ll_historial.add_theme_constant_override("separation", 6)
 	ll_historial.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ll_scroll_historial.add_child(ll_historial)
-	ll_texto = _etiqueta("", 22, Color("7dffb3"))
+	ll_texto = _etiqueta("", 19, Color("7dffb3"))
 	ll_texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ll_texto.custom_minimum_size = Vector2(ANCHO_LLAMADA - 40, 0)
 	ll_caja_dialogo.add_child(ll_texto)
-	ll_saltar = _etiqueta("X: ver todo el texto", 15, Color("6b8aa8"))
+	ll_saltar = _etiqueta("X: ver todo el texto", 14, Color("6b8aa8"))
 	ll_caja_dialogo.add_child(ll_saltar)
+	# Las respuestas van en una lista con desplazamiento: siempre se ven todas
+	ll_scroll_opciones = ScrollContainer.new()
+	ll_scroll_opciones.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	ll_scroll_opciones.follow_focus = true
+	ll_scroll_opciones.custom_minimum_size = Vector2(0, 140)
+	ll_caja_dialogo.add_child(ll_scroll_opciones)
 	ll_opciones = VBoxContainer.new()
-	ll_opciones.add_theme_constant_override("separation", 6)
-	ll_caja_dialogo.add_child(ll_opciones)
+	ll_opciones.add_theme_constant_override("separation", 4)
+	ll_opciones.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ll_scroll_opciones.add_child(ll_opciones)
 	# --- Pestaña INFORMACIÓN
 	ll_caja_info = VBoxContainer.new()
 	ll_caja_info.add_theme_constant_override("separation", 10)

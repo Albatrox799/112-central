@@ -72,7 +72,7 @@ func _recordar_unidades() -> void:
 		return
 	var nuevas: Array = []
 	for v in lista:
-		nuevas.append({"id": v.id_unidad, "servicio": v.servicio, "n": clampi(v.efectivos(), 1, 3),
+		nuevas.append({"id": v.id_unidad, "servicio": v.servicio, "tipo": v.tipo, "n": clampi(v.efectivos(), 1, 3),
 			"llegada": float(inc.llegadas.get(v.id_unidad, -1000.0))})
 	_unidades = nuevas
 
@@ -129,6 +129,16 @@ func _draw() -> void:
 		_:
 			_escena_medica()
 	_escena_proteccion_civil()
+	for u in _unidades:
+		if u.get("tipo", "") == "pma":
+			_carpa_pma()
+			break
+	for u in _unidades:
+		if u.get("tipo", "") == "canina":
+			_perro(Vector2(260 + sin(_t * 0.8) * 60.0, Y_ACERA + 6))
+			break
+	if _hay("policia") and String(inc.servicio_necesario) != "policia":
+		_corte_trafico()
 	_dibujar_chispas()
 	_carteles()
 	draw_rect(ESCENA, Color("2a6f8f"), false, 1.0)
@@ -199,7 +209,7 @@ func _aparcados(salen: Dictionary = {}) -> Dictionary:
 		if edad < T_LLEGADA:
 			var k := clampf(edad / T_LLEGADA, 0.0, 1.0)
 			desplazamiento -= (1.0 - (1.0 - pow(1.0 - k, 3.0))) * 460.0
-		_vehiculo(p + Vector2(desplazamiento, 0), sv, 1.0, true)
+		_vehiculo(p + Vector2(desplazamiento, 0), sv, 1.0, true, String(u.get("tipo", "")))
 		if edad >= T_LLEGADA and edad < T_LLEGADA + T_BAJAR + 1.2:
 			# Puerta abierta mientras se bajan
 			draw_rect(Rect2(p + Vector2(-2, -26), Vector2(4, 20)), Color("c8ccd4"))
@@ -738,6 +748,19 @@ func _escena_tramites() -> void:
 		_persona(cuerpo + Vector2(60, -2), "funeraria", "multa", 0.0, -1.0)   # el secretario judicial con sus papeles
 
 
+## La policía corta un carril: conos naranjas y coches esperando.
+func _corte_trafico() -> void:
+	for k in 4:
+		var c := Vector2(392 + k * 26.0, Y_CALZADA + 10)
+		draw_colored_polygon(PackedVector2Array([c + Vector2(-5, 6), c + Vector2(5, 6), c + Vector2(0, -8)]), Color("ff8c1a"))
+		draw_line(c + Vector2(-3, 0), c + Vector2(3, 0), Color.WHITE, 2.0)
+	# Coche esperando con los faros encendidos
+	var p := Vector2(ESCENA.end.x - 14, Y_SUELO)
+	_vehiculo(p, "", -1.0, false)
+	if _es_noche():
+		draw_colored_polygon(PackedVector2Array([p + Vector2(-28, -12), p + Vector2(-70, -20), p + Vector2(-70, -2)]), Color(1.0, 0.95, 0.7, 0.25))
+
+
 ## Voluntarios de Protección Civil: acordonan y ayudan en cualquier escena.
 func _escena_proteccion_civil() -> void:
 	var n := _gente("proteccion_civil")
@@ -759,13 +782,21 @@ func _escena_proteccion_civil() -> void:
 func _apoyo_alrededor(centro: Vector2, puertas: Dictionary, primera_respuesta: bool) -> void:
 	var n_pol := _gente("policia")
 	for i in mini(n_pol, 3):
-		var sitio := centro + Vector2(-48 - i * 24.0, 2)
-		if primera_respuesta and i == 0:
-			sitio = centro + Vector2(-20, 0)
+		# El primero atiende al herido si aún no hay sanitarios; los demás cortan el tráfico
+		var atiende := primera_respuesta and i == 0
+		var sitio := centro + Vector2(-20, 0) if atiende else Vector2(430 + i * 26.0, Y_SUELO - 2)
 		var puerta: Vector2 = puertas.get("policia", sitio)
 		var pos := _entrar(puerta, sitio, 0.2 + i * 0.3)
-		var pose := "andar" if _andando(puerta, sitio, 0.2 + i * 0.3) else ("agachado" if primera_respuesta and i == 0 else "trafico")
-		_persona(pos, "policia", pose, _t * 3.0, 1.0)
+		var andando := _andando(puerta, sitio, 0.2 + i * 0.3)
+		var pose := "andar" if andando else ("agachado" if atiende else "trafico")
+		_persona(pos, "policia", pose, _t * 3.0, 1.0 if atiende else -1.0)
+		if atiende and not andando and pos != FUERA:
+			# Manta térmica sobre el herido y el botiquín al lado
+			draw_rect(Rect2(centro + Vector2(-6, -8), Vector2(18, 6)), Color("d7dde4"))
+			draw_rect(Rect2(centro + Vector2(-6, -8), Vector2(18, 6)), Color("f1c40f"), false, 1.0)
+			draw_rect(Rect2(centro + Vector2(-38, -7), Vector2(9, 7)), Color("e74c3c"))
+			draw_line(centro + Vector2(-35.5, -3.5), centro + Vector2(-31.5, -3.5), Color.WHITE, 1.5)
+			draw_line(centro + Vector2(-33.5, -5.5), centro + Vector2(-33.5, -1.5), Color.WHITE, 1.5)
 	var n_bom := _gente("bomberos")
 	for i in mini(n_bom, 2):
 		var sitio := centro + Vector2(50 + i * 24.0, 2)
@@ -874,7 +905,10 @@ func _persona(p: Vector2, tipo: String, pose: String = "pie", fase: float = 0.0,
 
 
 ## Vehículo visto de lado. p = punto del suelo en el centro.
-func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool) -> void:
+func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: String = "") -> void:
+	if tipo in ["camuflado", "canina", "vir", "moto_sanitaria", "moto", "pma", "guardia_civil", "ume"]:
+		_vehiculo_especial(p, tipo, mirando, luces)
+		return
 	_elipse(p + Vector2(0, 1), 34.0, 4.0, Color(0, 0, 0, 0.4))
 	draw_set_transform(p, 0.0, Vector2(mirando, 1.0))
 	var rueda := Color("101418")
@@ -923,6 +957,104 @@ func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool) -> voi
 		draw_circle(Vector2(x, -5), 5.5, rueda)
 		draw_circle(Vector2(x, -5), 2.2, Color("5a6170"))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## Vehículos con aspecto propio (0.96)
+func _vehiculo_especial(p: Vector2, tipo: String, mirando: float, luces: bool) -> void:
+	var moto := tipo == "moto" or tipo == "moto_sanitaria"
+	_elipse(p + Vector2(0, 1), 16.0 if moto else 34.0, 4.0, Color(0, 0, 0, 0.4))
+	draw_set_transform(p, 0.0, Vector2(mirando, 1.0))
+	var rueda := Color("101418")
+	var ruedas := [-18.0, 18.0]
+	match tipo:
+		"camuflado":
+			draw_rect(Rect2(-29, -17, 58, 12), Color("5b6170"))
+			draw_rect(Rect2(-15, -27, 30, 11), Color("5b6170"))
+			draw_rect(Rect2(-12, -25, 11, 7), Color("9cc9ff"))
+			draw_rect(Rect2(1, -25, 11, 7), Color("9cc9ff"))
+			if luces and int(_t * 6.0) % 2 == 0:
+				draw_circle(Vector2(8, -21), 2.5, Color("3b7bff"))   # luz oculta tras el parabrisas
+		"canina":
+			draw_rect(Rect2(-30, -20, 60, 15), Color("1f4fa8"))
+			draw_rect(Rect2(-14, -30, 30, 11), Color("1f4fa8"))
+			draw_rect(Rect2(-11, -28, 11, 7), Color("9cc9ff"))
+			draw_rect(Rect2(-30, -13, 60, 3), Color("f4f6fa"))
+			draw_string(fuente, Vector2(-28, -6), "K9", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("ffd166"))
+			_luces(Vector2(-6, -32), Vector2(8, -32), luces)
+		"guardia_civil":
+			draw_rect(Rect2(-30, -18, 60, 13), Color("2e7d4f"))
+			draw_rect(Rect2(-16, -28, 30, 11), Color("2e7d4f"))
+			draw_rect(Rect2(-13, -26, 11, 7), Color("9cc9ff"))
+			draw_rect(Rect2(1, -26, 11, 7), Color("9cc9ff"))
+			draw_rect(Rect2(-30, -12, 60, 3), Color("f4f6fa"))
+			_luces(Vector2(-8, -30), Vector2(6, -30), luces)
+		"ume":
+			draw_rect(Rect2(-36, -34, 56, 29), Color("d4a017"))
+			draw_rect(Rect2(20, -28, 16, 23), Color("d4a017"))
+			draw_rect(Rect2(23, -25, 10, 9), Color("9cc9ff"))
+			draw_string(fuente, Vector2(-30, -14), "UME", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("1e1e1e"))
+			_luces(Vector2(22, -30), Vector2(32, -30), luces)
+			ruedas = [-24.0, 0.0, 24.0]
+		"vir":
+			draw_rect(Rect2(-30, -22, 60, 17), Color("f4f6fa"))
+			draw_rect(Rect2(-14, -31, 30, 10), Color("f4f6fa"))
+			draw_rect(Rect2(-11, -29, 11, 7), Color("7fb2ff"))
+			for k in 6:
+				draw_rect(Rect2(-30 + k * 10.0, -15, 5, 4), Color("27ae60") if k % 2 == 0 else Color("f1c40f"))
+			draw_string(fuente, Vector2(-26, -17), "VIR", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("27ae60"))
+			_luces(Vector2(-6, -33), Vector2(8, -33), luces)
+		"pma":
+			draw_rect(Rect2(-38, -36, 60, 31), Color("f4f6fa"))
+			draw_rect(Rect2(22, -28, 16, 23), Color("f4f6fa"))
+			draw_rect(Rect2(25, -25, 10, 9), Color("7fb2ff"))
+			draw_rect(Rect2(-38, -16, 76, 4), Color("e67e22"))
+			draw_string(fuente, Vector2(-32, -21), "PMA", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("e67e22"))
+			_luces(Vector2(24, -30), Vector2(34, -30), luces)
+			ruedas = [-26.0, 0.0, 26.0]
+		_:
+			# Motos (policía o sanitaria)
+			var col := Color("e3ef5a") if tipo == "moto_sanitaria" else Color("1f4fa8")
+			draw_line(Vector2(-12, -6), Vector2(12, -6), col, 5.0)
+			draw_line(Vector2(6, -6), Vector2(10, -16), Color("8a8f99"), 2.0)
+			draw_rect(Rect2(-8, -12, 10, 6), col)
+			draw_circle(Vector2(-4, -22), 4.0, Color.WHITE)   # casco
+			draw_line(Vector2(-4, -18), Vector2(-4, -10), col.darkened(0.3), 4.0)
+			if luces and int(_t * 6.0) % 2 == 0:
+				draw_circle(Vector2(-10, -12), 2.5, Color("3b7bff"))
+			ruedas = [-11.0, 11.0]
+	for x in ruedas:
+		var r := 4.5 if moto else 5.5
+		draw_circle(Vector2(x, -5), r, rueda)
+		draw_circle(Vector2(x, -5), r * 0.4, Color("5a6170"))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## Carpa del Puesto Médico Avanzado con heridos en camillas.
+func _carpa_pma() -> void:
+	var base := Vector2(150, Y_ACERA - 2)
+	draw_colored_polygon(PackedVector2Array([base + Vector2(-56, -40), base + Vector2(0, -64), base + Vector2(56, -40)]), Color("f4f6fa"))
+	draw_rect(Rect2(base + Vector2(-56, -40), Vector2(112, 40)), Color(0.95, 0.96, 0.98, 0.35))
+	draw_line(base + Vector2(-56, -40), base + Vector2(-56, 0), Color("c8ccd4"), 2.0)
+	draw_line(base + Vector2(56, -40), base + Vector2(56, 0), Color("c8ccd4"), 2.0)
+	draw_rect(Rect2(base + Vector2(-6, -58), Vector2(12, 4)), Color("e74c3c"))
+	draw_rect(Rect2(base + Vector2(-2, -62), Vector2(4, 12)), Color("e74c3c"))
+	for k in 2:
+		var c := base + Vector2(-28 + k * 50.0, 0)
+		_camilla(c, true)
+	if inc.evento != "terminado":
+		_persona(base + Vector2(-2, 2), "ambulancia", "pie", 0.0, 1.0)
+
+
+## Perro de la unidad canina olfateando por la zona.
+func _perro(p: Vector2) -> void:
+	var paso := sin(_t * 10.0) * 2.0
+	_elipse(p + Vector2(0, 1), 10.0, 2.0, Color(0, 0, 0, 0.3))
+	draw_rect(Rect2(p + Vector2(-9, -11), Vector2(16, 6)), Color("8b5a2b"))
+	draw_circle(p + Vector2(9, -11), 4.0, Color("8b5a2b"))
+	draw_line(p + Vector2(11, -14), p + Vector2(10, -18), Color("5b3a1e"), 2.0)   # oreja
+	draw_line(p + Vector2(-9, -9), p + Vector2(-14, -14 + paso), Color("8b5a2b"), 2.0)   # cola
+	for x in [-7.0, -2.0, 3.0, 6.0]:
+		draw_line(p + Vector2(x, -5), p + Vector2(x + paso * (1.0 if int(x) % 2 == 0 else -1.0) * 0.5, 0), Color("6b4423"), 2.0)
 
 
 func _luces(a: Vector2, b: Vector2, encendidas: bool) -> void:

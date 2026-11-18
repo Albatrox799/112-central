@@ -19,6 +19,11 @@ const VEHICULOS := {
 	"autobomba": {"nombre": "Autobomba", "servicio": "bomberos", "velocidad": 45.0, "plazas": 4, "precio": 120000, "bono": ""},
 	"escalera": {"nombre": "Camión escalera", "servicio": "bomberos", "velocidad": 40.0, "plazas": 3, "precio": 150000, "bono": "altura"},
 	"rescate": {"nombre": "Unidad de rescate", "servicio": "bomberos", "velocidad": 55.0, "plazas": 3, "precio": 90000, "bono": "rescate"},
+	"camuflado": {"nombre": "Coche camuflado", "servicio": "policia", "velocidad": 70.0, "plazas": 2, "precio": 26000, "bono": "camuflado"},
+	"canina": {"nombre": "Unidad canina", "servicio": "policia", "velocidad": 60.0, "plazas": 2, "precio": 24000, "bono": "canino"},
+	"vir": {"nombre": "VIR (vehículo de intervención rápida)", "servicio": "ambulancia", "velocidad": 78.0, "plazas": 2, "precio": 35000, "bono": "vir"},
+	"moto_sanitaria": {"nombre": "Moto sanitaria", "servicio": "ambulancia", "velocidad": 85.0, "plazas": 1, "precio": 15000, "bono": "moto_sanitaria"},
+	"pma": {"nombre": "Puesto Médico Avanzado", "servicio": "ambulancia", "velocidad": 40.0, "plazas": 4, "precio": 80000, "bono": "pma"},
 	"pc_vehiculo": {"nombre": "Vehículo de Protección Civil", "servicio": "proteccion_civil", "velocidad": 50.0, "plazas": 4, "precio": 22000, "bono": "apoyo"},
 }
 

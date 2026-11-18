@@ -49,6 +49,7 @@ const LOGROS := {
 	"flota": {"nombre": "Gran flota", "desc": "Ten 10 vehículos o más."},
 	"denuncias": {"nombre": "Atención al ciudadano", "desc": "Tramita 5 denuncias en la comisaría."},
 	"persecucion": {"nombre": "Ni un ladrón suelto", "desc": "Detén a los ladrones tras una persecución."},
+	"detenciones": {"nombre": "Calabozo lleno", "desc": "Lleva 10 detenidos al calabozo de la comisaría."},
 	"redada": {"nombre": "Operación Polígono", "desc": "Completa la redada contra el narcotráfico."},
 	"caso_cerrado": {"nombre": "Caso cerrado", "desc": "Resuelve el caso del parque."},
 	"jefe": {"nombre": "Jefe/a de sala", "desc": "Llega al rango de Jefe/a de sala."},

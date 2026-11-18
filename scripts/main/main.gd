@@ -32,6 +32,9 @@ const TURNOS := {
 const TIEMPO_BUSQUEDA := [16.0, 14.0, 7.0, 0.0]
 const SEGUNDOS_PARA_COLGAR := 25.0
 const DURACION_TRAMITES := 34.0
+const TOPE_PRIMERA_RESPUESTA := 0.3   # la primera respuesta avanza como mucho hasta aquí
+## Vehículos sanitarios que atienden pero no trasladan al hospital
+const NO_TRASLADAN := ["vir", "moto_sanitaria", "pma"]
 const COLOR_RADIO_AMBULANCIA := Color("f4d35e")
 const COLOR_RADIO_POLICIA := Color("6fb1ff")
 const COLOR_RADIO_BOMBEROS := Color("ff8a65")
@@ -39,6 +42,20 @@ const COLOR_SISTEMA := Color("ffa630")
 const COLOR_LLAMADA := Color("ff6b6b")
 const NOMBRES_SERVICIO := {"ambulancia": "Ambulancia", "policia": "Policía", "bomberos": "Bomberos", "proteccion_civil": "Protección Civil"}
 const COLOR_RADIO_PC := Color("ffb15c")
+## Lo que hace especial a cada vehículo (se ve en la tienda)
+const DESC_BONO := {
+	"rapida": "Muy rápida, pero no puede llevar detenidos.",
+	"detenidos": "Lleva hasta 4 detenidos al calabozo.",
+	"medico": "Con médico: estabiliza antes a los pacientes graves.",
+	"altura": "Escalera para rescates en altura.",
+	"rescate": "Excarcelación y rescates complicados.",
+	"apoyo": "Se queda ayudando en cualquier emergencia: todo va más rápido.",
+	"camuflado": "Sin colores ni sirenas: los sospechosos no huyen; caza excesos de velocidad patrullando y ayuda en las investigaciones.",
+	"canino": "Perro detector: encuentra droga en los controles y busca más rápido a personas perdidas.",
+	"vir": "Coche médico, el más rápido: estabiliza y evita que empeoren, pero no traslada al hospital.",
+	"moto_sanitaria": "Llega antes que nadie entre la gente de las fiestas; solo primeros auxilios, no traslada.",
+	"pma": "Carpa con camillas: atiende a varios heridos a la vez en grandes emergencias; no traslada.",
+}
 const Pueblo = preload("res://data/pueblo/pueblo.gd")
 ## Meteorología: nombre, color en la barra y velocidad de las unidades.
 const CLIMAS := {
@@ -120,7 +137,7 @@ var _t_historias := 0.0
 var paso_calibracion := 0
 var boton_x := -1
 var boton_circulo := -1
-var nav_abajo: Dictionary = {}
+var cruceta_temp: Dictionary = {}
 var debug_activo := false
 var ultimo_evento := "(pulsa cualquier botón)"
 var _t_barra := 0.0
@@ -130,8 +147,8 @@ var _t_trafico := 0.0
 var evento_hoy := ""          # fiesta o día especial activo en este turno
 var pos_evento := Vector2.ZERO
 var obras: Array = []         # [nodo_a, nodo_b, nombre de la calle]
-var denuncia_actual: Dictionary = {}
-var t_denuncia := 0.0
+var denuncias: Array = []          # denuncias pendientes en la comisaría
+var pausa_comisaria := false
 var externos_usados := {"guardia_civil": 0, "ume": 0}
 var contador_externos := 0
 var capa_mapa := ""           # "", "calor", "historial"
@@ -387,7 +404,7 @@ func _partida_nueva() -> Dictionary:
 	return {"dia": 1, "turnos": 0, "resueltas": 0, "estrellas": 0, "valoradas": 0,
 		"dinero": Catalogo.DINERO_INICIAL, "flota": Catalogo.FLOTA_INICIAL.duplicate(true),
 		"vistas": [], "reputacion": 50.0, "puntos": 0, "logros": [], "historial": [], "arcos": {},
-		"evento_dia": {}, "eventos_vistos": [], "denuncias_tramitadas": 0, "pc_regalado": false}
+		"evento_dia": {}, "eventos_vistos": [], "denuncias_tramitadas": 0, "pc_regalado": false, "detenidos_total": 0}
 
 
 func _cargar_partida() -> void:
@@ -486,7 +503,7 @@ func _empezar_turno(tipo: String) -> void:
 	stats = {"llamadas": 0, "falsas": 0, "perdidas": 0, "resueltas": 0, "estrellas": 0,
 		"valoradas": 0, "tiempo_total": 0.0, "con_tiempo": 0, "empeoradas": 0, "ingresos": 0, "heridos": 0,
 		"historias": 0, "historias_buenas": 0, "relacionadas": 0, "fallecidos": 0, "sucesos": [],
-		"titular_especial": "", "logros_nuevos": [], "detenidos_huida": 0}
+		"titular_especial": "", "logros_nuevos": [], "detenidos_huida": 0, "detenidos": 0, "multas": 0, "comision": 0}
 	cola_relacionadas.clear()
 	_elegir_objetivos()
 	var t: Dictionary = TURNOS[tipo]
@@ -623,7 +640,8 @@ func _mostrar_tienda_vehiculos() -> void:
 	var nombres := {"ambulancia": "Sanitario", "policia": "Policía", "bomberos": "Bomberos", "proteccion_civil": "Protección Civil"}
 	for clave in Catalogo.VEHICULOS:
 		var d: Dictionary = Catalogo.VEHICULOS[clave]
-		opciones.append({"texto": "%s · %s · Vel. %d · %d plazas · %s" % [nombres[d["servicio"]], d["nombre"], int(d["velocidad"]), int(d["plazas"]), Hud.formato_euros(d["precio"])],
+		var extra: String = DESC_BONO.get(d["bono"], "")
+		opciones.append({"texto": "%s · %s · Vel. %d · %d plazas · %s%s" % [nombres[d["servicio"]], d["nombre"], int(d["velocidad"]), int(d["plazas"]), Hud.formato_euros(d["precio"]), "" if extra == "" else "\n     " + extra],
 			"accion": _comprar_vehiculo.bind(clave), "activo": dinero >= int(d["precio"])})
 	opciones.append({"texto": "Volver a equipos", "accion": _mostrar_equipos})
 	hud.mostrar_panel("TIENDA DE VEHÍCULOS", "Dinero: %s\nCada vehículo nuevo viene con su personal mínimo." % Hud.formato_euros(dinero), opciones, true)
@@ -683,6 +701,9 @@ func _mostrar_resumen() -> void:
 		Hud.formato_euros(stats["ingresos"]), Hud.formato_euros(sueldos), Hud.formato_euros(partida["dinero"])]
 	if stats["heridos"] > 0:
 		texto += "\nPersonal herido este turno: %d" % stats["heridos"]
+	texto += "\nPolicía: %d detenidos al calabozo y %d multas" % [stats["detenidos"], stats["multas"]]
+	if stats["comision"] > 0:
+		texto += "\nComisión por multas (%d %%): +%s" % [int(round(_comision() * 100.0)), Hud.formato_euros(stats["comision"])]
 	partida["dia"] += 1
 	partida["turnos"] += 1
 	partida["resueltas"] += stats["resueltas"]
@@ -763,6 +784,8 @@ func _datos_periodico(media: float) -> Dictionary:
 			break
 	if stats["heridos"] > 0:
 		breves.append("%d agentes heridos durante el servicio." % stats["heridos"])
+	if stats["detenidos"] > 0 or stats["multas"] > 0:
+		breves.append("La Policía Local detuvo a %d personas y puso %d multas." % [stats["detenidos"], stats["multas"]])
 	var nota := "sin valorar" if stats["valoradas"] == 0 else "%.1f de 5" % media
 	return {"fecha": "Día %d de servicio · %s" % [partida["dia"] - 1, TURNOS[turno]["nombre"]],
 		"titular": titular, "subtitulo": sub, "breves": breves,
@@ -863,7 +886,8 @@ func _evento_del_dia() -> String:
 
 func _preparar_vida_del_pueblo() -> void:
 	externos_usados = {"guardia_civil": 0, "ume": 0}
-	denuncia_actual = {}
+	denuncias.clear()
+	hud.set_comisaria(0)
 	etapas_programadas.clear()
 	stats["rango_inicio"] = _rango_indice(int(partida["puntos"]))
 	stats["reputacion_inicio"] = float(partida["reputacion"])
@@ -1159,13 +1183,20 @@ func _cambiar_capa_mapa() -> void:
 	_mostrar_menu_pausa()
 
 
-# ================================================================ COMISARÍA: DENUNCIAS (0.95)
+# ================================================================ COMISARÍA: DENUNCIAS (0.95-0.96)
+## Las denuncias se acumulan en la comisaría (C/ Lentejuela, 7). Arriba se ve
+## cuántas hay; con la cruceta izquierda se abre la comisaría y el juego se pausa.
+
+const MAX_DENUNCIAS := 4
+const ESPERA_DENUNCIA := 300.0   # segundos de juego que espera el vecino
+
 
 func _llega_denuncia() -> void:
 	if en_menu or turno_terminando:
 		return
-	if not denuncia_actual.is_empty():
-		_programar(60.0, _llega_denuncia)
+	if turno == "dia" and randf() < 0.65:
+		_programar(randf_range(220.0, 380.0), _llega_denuncia)
+	if denuncias.size() >= MAX_DENUNCIAS:
 		return
 	var d: Dictionary = {}
 	# Las investigaciones pueden necesitar una denuncia
@@ -1177,47 +1208,80 @@ func _llega_denuncia() -> void:
 			break
 	if d.is_empty():
 		d = Pueblo.DENUNCIAS[randi() % Pueblo.DENUNCIAS.size()].duplicate()
-	d["numero"] = randi()
-	denuncia_actual = d
-	hud.notificar("COMISARÍA: %s quiere poner una denuncia. Pulsa Triángulo para atenderle." % d["quien"], COLOR_RADIO_POLICIA)
+	d["llegada"] = tiempo_juego
+	denuncias.append(d)
+	hud.set_comisaria(denuncias.size())
+	hud.notificar("COMISARÍA: ha llegado una denuncia nueva. Pulsa la cruceta IZQUIERDA para atenderla.", COLOR_RADIO_POLICIA)
 	_sonido("radio")
-	_consejo("denuncia", "En la comisaría de la calle Lentejuela los vecinos ponen denuncias. Tramitarlas da reputación, y algunas abren investigaciones o evitan delitos.")
-	_programar(150.0, _denuncia_caduca.bind(d["numero"]))
-	if turno == "dia" and randf() < 0.6:
-		_programar(randf_range(260.0, 420.0), _llega_denuncia)
+	_consejo("denuncia", "En la comisaría de la calle Lentejuela los vecinos ponen denuncias. Ábrela con la cruceta izquierda (el juego se pausa). Tramitarlas da reputación, y algunas abren investigaciones o evitan delitos.")
 
 
-func _denuncia_caduca(numero: int) -> void:
-	if denuncia_actual.is_empty() or int(denuncia_actual.get("numero", -1)) != numero:
-		return
-	var tipo: String = denuncia_actual["tipo"]
-	if tipo == "arco":
-		etapas_programadas.append(denuncia_actual["arco"])
-	denuncia_actual = {}
-	_sumar_reputacion(-1.0)
-	hud.notificar("COMISARÍA: el vecino se ha cansado de esperar y se ha ido.", COLOR_RADIO_POLICIA)
+## Cada segundo: los vecinos que llevan mucho rato esperando se van.
+func _vigilar_denuncias() -> void:
+	var quedan: Array = []
+	for d in denuncias:
+		if tiempo_juego - float(d["llegada"]) > ESPERA_DENUNCIA:
+			if d["tipo"] == "arco":
+				etapas_programadas.append(d["arco"])
+			_sumar_reputacion(-1.0)
+			hud.notificar("COMISARÍA: un vecino se ha cansado de esperar y se ha ido.", COLOR_RADIO_POLICIA)
+		else:
+			quedan.append(d)
+	if quedan.size() != denuncias.size():
+		denuncias = quedan
+		hud.set_comisaria(denuncias.size())
 
 
-func _mostrar_denuncia() -> void:
-	if denuncia_actual.is_empty():
-		_cerrar_panel()
-		return
-	var d := denuncia_actual
-	var texto := "Comisaría de la Policía Local · C/ Lentejuela, 7\n%s:\n\n«%s»" % [d["quien"], d["texto"]]
-	hud.mostrar_panel("DENUNCIA EN LA COMISARÍA", texto, [
-		{"texto": "Tramitar la denuncia y abrir una investigación", "accion": _resolver_denuncia.bind("tramitar")},
-		{"texto": "Tomar nota y pasarla al turno siguiente", "accion": _resolver_denuncia.bind("nota")},
-		{"texto": "Archivarla", "accion": _resolver_denuncia.bind("archivar")},
-		{"texto": "Volver (el vecino espera un rato)", "accion": _cerrar_panel},
-	])
+func _mostrar_comisaria() -> void:
+	if not get_tree().paused:
+		get_tree().paused = true
+		pausa_comisaria = true
+	var opciones := []
+	for i in denuncias.size():
+		var d: Dictionary = denuncias[i]
+		var espera := int(maxf(0.0, ESPERA_DENUNCIA - (tiempo_juego - float(d["llegada"]))))
+		var resumen := String(d["texto"])
+		if resumen.length() > 60:
+			resumen = resumen.left(58) + "…"
+		opciones.append({"texto": "%s · «%s» (espera %d s)" % [d["quien"], resumen, espera], "accion": _mostrar_denuncia.bind(i)})
+	opciones.append({"texto": "Volver al mapa (el juego sigue)", "accion": _cerrar_comisaria})
+	var texto := "Comisaría de la Policía Local · C/ Lentejuela, 7\nEl juego está en pausa mientras decides."
+	if denuncias.is_empty():
+		texto += "\n\nNo hay ninguna denuncia pendiente."
+	else:
+		texto += "\n\nDenuncias pendientes: %d. Elige una para atenderla." % denuncias.size()
+	texto += "\nDenuncias tramitadas en total: %d" % int(partida["denuncias_tramitadas"])
+	hud.mostrar_panel("COMISARÍA", texto, opciones, true, 120.0, 720.0)
 
 
-func _resolver_denuncia(accion: String) -> void:
-	var d := denuncia_actual
-	denuncia_actual = {}
+func _cerrar_comisaria() -> void:
 	hud.cerrar_panel()
-	if d.is_empty():
+	if pausa_comisaria:
+		pausa_comisaria = false
+		get_tree().paused = false
+
+
+func _mostrar_denuncia(i: int) -> void:
+	if i < 0 or i >= denuncias.size():
+		_mostrar_comisaria()
 		return
+	var d: Dictionary = denuncias[i]
+	var texto := "%s:\n\n«%s»" % [d["quien"], d["texto"]]
+	hud.mostrar_panel("DENUNCIA EN LA COMISARÍA", texto, [
+		{"texto": "Tramitar la denuncia y abrir una investigación", "accion": _resolver_denuncia.bind(i, "tramitar")},
+		{"texto": "Tomar nota y pasarla al turno siguiente", "accion": _resolver_denuncia.bind(i, "nota")},
+		{"texto": "Archivarla", "accion": _resolver_denuncia.bind(i, "archivar")},
+		{"texto": "Volver a la lista de denuncias", "accion": _mostrar_comisaria},
+	], true, 160.0, 720.0)
+
+
+func _resolver_denuncia(i: int, accion: String) -> void:
+	if i < 0 or i >= denuncias.size():
+		_mostrar_comisaria()
+		return
+	var d: Dictionary = denuncias[i]
+	denuncias.remove_at(i)
+	hud.set_comisaria(denuncias.size())
 	var tipo: String = d["tipo"]
 	match accion:
 		"tramitar":
@@ -1243,6 +1307,7 @@ func _resolver_denuncia(accion: String) -> void:
 			hud.notificar("Denuncia archivada. El vecino se va muy enfadado.", COLOR_RADIO_POLICIA)
 			if tipo == "sospechoso":
 				_programar(randf_range(90.0, 160.0), _cadena_robo.bind(-1))
+	_mostrar_comisaria()
 
 
 # ================================================================ INVESTIGACIONES (0.95)
@@ -1562,6 +1627,8 @@ func _process(delta: float) -> void:
 	if _t_trafico <= 0.0:
 		_t_trafico = 1.0
 		_actualizar_trafico()
+		_vigilar_denuncias()
+		_radar_camuflado()
 		for v in vehiculos:
 			if v.estado == "Disponible":
 				v.cansancio = maxf(0.0, v.cansancio - 2.0)
@@ -1816,6 +1883,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.is_action_pressed("categoria_anterior"):
 			_fijar_velocidad(indice_velocidad - 1)
 			return
+	if pausa_comisaria:
+		if event.is_action_pressed("cancelar") or event.is_action_pressed("abrir_comisaria") or event.is_action_pressed("pausa"):
+			_cerrar_comisaria()
+			get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("pausa"):
 		_alternar_pausa()
 		get_viewport().set_input_as_handled()
@@ -1842,6 +1914,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_mostrar_lista_unidades()
 	elif event.is_action_pressed("abrir_emergencias"):
 		_mostrar_lista_emergencias()
+	elif event.is_action_pressed("abrir_comisaria"):
+		_mostrar_comisaria()
 
 
 func _notification(what: int) -> void:
@@ -2013,8 +2087,6 @@ func _mostrar_lista_emergencias() -> void:
 	var opciones := []
 	if llamada_sonando:
 		opciones.append({"texto": "Contestar la llamada entrante", "accion": _contestar_llamada})
-	if not denuncia_actual.is_empty():
-		opciones.append({"texto": "COMISARÍA: denuncia pendiente · %s" % denuncia_actual["quien"], "accion": _mostrar_denuncia})
 	for inc in incidentes:
 		if inc.activo():
 			var aviso := " · ¡ESPERAN TUS ÓRDENES!" if inc.decision_pendiente else ""
@@ -2631,6 +2703,8 @@ func _on_unidad_llega(v) -> void:
 				_comenzar_intervencion(v)
 		"buscando2":
 			_comenzar_intervencion(v)
+		"calabozo":
+			_detenidos_en_calabozo(v)
 		"traslado":
 			v.fase = "hospital"
 			_radio(v, "Paciente entregado en el Hospital General de Ciudad Real.")
@@ -2712,15 +2786,18 @@ func _comenzar_intervencion(v) -> void:
 			inc.registrar(_hora(segundos_sim), "%s atiende como primera respuesta" % v.id_unidad)
 			_consejo("primera_respuesta", "Si no tienes la unidad adecuada libre, puedes mandar otra (por ejemplo, la policía) para que atienda mientras tanto: la situación empeora más despacio.")
 			return
-		# Unidad de apoyo: ayuda un rato y se va
+		# Unidad de apoyo: se queda hasta el final ayudando (tráfico, zona, heridos leves)
+		v.fase = "apoyo"
+		if not inc.apoyos.has(v):
+			inc.apoyos.append(v)
 		match v.servicio:
 			"policia":
-				_radio(v, "En el lugar. Zona asegurada y tráfico cortado.")
+				_radio(v, "En el lugar. Cortamos el tráfico y despejamos el paso para que trabajen más rápido.")
 			"ambulancia":
 				_radio(v, "En el lugar. Atendemos a los afectados leves.")
 			_:
 				_radio(v, "En el lugar. Asegurando la zona.")
-		_programar(8.0, _regresar.bind(v))
+		_consejo("apoyo", "Las unidades de apoyo se quedan hasta el final: la policía organiza el tráfico y todo va más rápido. Al terminar, se van todas.")
 		return
 	inc.en_lugar.append(v)
 	inc.presentes[v.servicio] = int(inc.presentes.get(v.servicio, 0)) + 1
@@ -2761,15 +2838,16 @@ func _liberar_apoyos(inc, llega) -> void:
 		if is_instance_valid(a) and a.servicio == "proteccion_civil":
 			continue
 		if is_instance_valid(a) and a.incidente == inc and a.fase == "primera_respuesta":
-			a.fase = "intervencion"
-			_radio(a, "Ya ha llegado %s. Les dejamos al cargo y nos retiramos." % llega.id_unidad)
-			_programar(3.0, _regresar.bind(a))
-	inc.apoyos.clear()
+			a.fase = "apoyo"
+			if a.servicio == "policia":
+				_radio(a, "Ya ha llegado %s. Les dejamos al paciente y nos quedamos organizando el tráfico." % llega.id_unidad)
+			else:
+				_radio(a, "Ya ha llegado %s. Seguimos ayudando hasta que terminen." % llega.id_unidad)
 
 
 func _iniciar_evento(inc, v) -> void:
 	inc.estado = "En intervención"
-	inc.progreso = 0.0
+	inc.progreso = minf(inc.progreso, TOPE_PRIMERA_RESPUESTA)   # lo avanzado por la primera respuesta
 	inc.duracion = inc.tiempo_intervencion + (inc.intensidad * 5.0 if inc.categoria == "fuego" else 0.0)
 	match inc.categoria:
 		"fuego":
@@ -2809,6 +2887,9 @@ func _pedir_refuerzos(inc) -> void:
 ## Avanza los mini eventos "En el lugar" que estén en marcha.
 func _actualizar_eventos(delta: float) -> void:
 	for inc in incidentes:
+		if inc.evento == "" and inc.activo() and inc.apoyos.size() > 0 and int(inc.presentes.get(inc.servicio_necesario, 0)) == 0:
+			# Primera respuesta: atienden muy despacio hasta que llega quien corresponde
+			inc.progreso = minf(inc.progreso + delta / maxf(inc.tiempo_intervencion * 6.0, 1.0), TOPE_PRIMERA_RESPUESTA)
 		if inc.evento == "en_curso":
 			inc.progreso += delta / maxf(inc.duracion, 1.0) * _ritmo(inc)
 			if not inc.refuerzo_pedido and inc.progreso >= 0.4:
@@ -2844,10 +2925,27 @@ func _ritmo(inc) -> float:
 	if n > 0:
 		r *= 1.0 - (cansancio / n) / 300.0
 	r *= 1.0 + 0.1 * formacion
+	var trafico := false
 	for v in inc.unidades_en_escena():
 		if v.servicio == "proteccion_civil":
 			r *= 1.2
 			break
+	for a in inc.apoyos:
+		if is_instance_valid(a) and a.incidente == inc and a.fase == "apoyo" and a.servicio == "policia":
+			trafico = true
+	if trafico:
+		r *= 1.15   # la policía organiza el tráfico y despeja el paso
+	# Vehículos especiales
+	if _alguno_con_bono(inc, "camuflado") and (inc.arco != "" or inc.categoria == "control"):
+		r *= 1.3
+	if _alguno_con_bono(inc, "canino") and inc.categoria in ["busqueda", "control"]:
+		r *= 1.5
+	if _alguno_con_bono(inc, "vir") and inc.categoria in ["medico", "atrapado"]:
+		r *= 1.2
+	if _alguno_con_bono(inc, "moto_sanitaria") and inc.evento_pueblo != "":
+		r *= 1.5
+	if _alguno_con_bono(inc, "pma") and inc.heridos >= 2:
+		r *= 1.0 + 0.3 * mini(inc.heridos, 3)
 	match inc.categoria:
 		"fuego":
 			if _alguno_tiene(inc, "extincion"):
@@ -2934,7 +3032,12 @@ func _finalizar_evento(inc, exito: bool) -> void:
 					break
 	if inc.historia == null and inc.fallecidos == 0 and not exito:
 		# Sin historia: si la espera fue demasiado larga, alguien puede morir
-		if inc.categoria in ["medico", "atrapado"] and inc.empeorado and randf() < 0.45:
+		var riesgo := 0.45
+		if _alguno_con_bono(inc, "pma"):
+			riesgo = 0.1
+		elif _alguno_con_bono(inc, "vir"):
+			riesgo = 0.25
+		if inc.categoria in ["medico", "atrapado"] and inc.empeorado and randf() < riesgo:
 			inc.fallecidos = 1
 		elif inc.categoria == "fuego" and inc.intensidad >= 3 and randf() < 0.3:
 			inc.fallecidos = 1
@@ -2947,20 +3050,172 @@ func _finalizar_evento(inc, exito: bool) -> void:
 	if inc.tipo == "aviso_trafico" and sospechoso != null and is_instance_valid(sospechoso):
 		sospechoso.queue_free()
 		sospechoso = null
+	_calcular_detenidos(inc, exito)
+	if inc.traslado and exito:
+		var puede := false
+		for v in inc.en_lugar:
+			if is_instance_valid(v) and v.servicio == "ambulancia" and not NO_TRASLADAN.has(v.bono):
+				puede = true
+		if not puede:
+			inc.traslado = false
+			inc.resultado += " Paciente estabilizado: lo recoge una ambulancia de Ciudad Real."
 	_informe_incidente(inc)
 	for a in inc.apoyos:
 		if is_instance_valid(a) and a.incidente == inc:
+			a.servicios_seguidos += 1
 			_regresar(a)
 	inc.apoyos.clear()
 	for v in inc.en_lugar:
 		if is_instance_valid(v):
 			v.servicios_seguidos += 1
+	# Los detenidos van al calabozo en los coches de policía que estaban allí
+	var por_llevar: int = inc.detenidos
+	var trasladado := false
 	for v in inc.en_lugar.duplicate():
-		if is_instance_valid(v) and v.incidente == inc:
-			if v.servicio == "ambulancia" and inc.traslado:
-				_trasladar(v)
+		if not is_instance_valid(v) or v.incidente != inc:
+			continue
+		if v.servicio == "policia" and por_llevar > 0 and _plazas_detenidos(v) > 0:
+			var lleva := mini(por_llevar, _plazas_detenidos(v))
+			por_llevar -= lleva
+			_llevar_al_calabozo(v, lleva)
+		elif v.servicio == "ambulancia" and inc.traslado and not NO_TRASLADAN.has(v.bono) and not trasladado:
+			trasladado = true
+			_trasladar(v)
+		else:
+			_regresar(v)
+	if por_llevar > 0:
+		stats["detenidos"] += por_llevar
+		partida["detenidos_total"] = int(partida["detenidos_total"]) + por_llevar
+
+
+# ================================================================ MULTAS Y DETENIDOS (0.96)
+
+## El coche camuflado caza excesos de velocidad mientras patrulla.
+func _radar_camuflado() -> void:
+	if turno_terminando:
+		return
+	for v in vehiculos:
+		if v.bono != "camuflado" or v.estado != "Patrullando":
+			continue
+		v.t_radar += 1.0
+		if v.t_radar < 70.0:
+			continue
+		v.t_radar = randf_range(-20.0, 10.0)
+		if randf() < 0.55:
+			var km := randi_range(72, 115)
+			var importe := _multa_velocidad(km)
+			var parte := int(round(importe * _comision()))
+			stats["multas"] += 1
+			stats["comision"] += parte
+			_cambiar_dinero(parte)
+			_radio(v, "Radar del coche camuflado: un turismo a %d km/h en %s. Multa de %d €: tu comisión, +%d €." % [km, red.calle_de_nodo(v.siguiente_nodo), importe, parte])
+
+
+
+
+## Según el delito: multa en el sitio o detenido al calabozo.
+func _calcular_detenidos(inc, exito: bool) -> void:
+	inc.detenidos = 0
+	inc.multas = 0
+	if not exito or inc.fallecidos > 0:
+		return
+	var texto: String = String(inc.resultado).to_lower()
+	match inc.categoria:
+		"pelea", "robo":
+			inc.detenidos = 2 if inc.cadena == "huida" or randf() < 0.35 else 1
+		"control":
+			if texto.contains("detenid") or texto.contains("positivo") and randf() < 0.5:
+				inc.detenidos = 2 if inc.cadena == "huida" else 1
 			else:
-				_regresar(v)
+				inc.multas = 1
+	if texto.contains("multad") or texto.contains("multa"):
+		inc.multas = maxi(inc.multas, 1)
+	if texto.contains("detenid") and inc.detenidos == 0:
+		inc.detenidos = 1
+	# Con la unidad canina, en los controles de noche a veces aparece droga
+	if inc.categoria == "control" and turno == "noche" and _alguno_con_bono(inc, "canino") and randf() < 0.35:
+		inc.detenidos = maxi(inc.detenidos, 1)
+		inc.multas = 0
+		inc.resultado += " El perro ha detectado droga escondida: el conductor queda detenido."
+	if inc.multas > 0:
+		inc.importe_multas = _importe_multa(texto + " " + String(inc.titulo).to_lower()) * inc.multas
+		inc.comision = int(round(inc.importe_multas * _comision()))
+		stats["multas"] += inc.multas
+		stats["comision"] += inc.comision
+		_cambiar_dinero(inc.comision)
+
+
+## Importe de la multa según la infracción (aproximado a los reales).
+func _importe_multa(texto: String) -> int:
+	if texto.contains("aparca") or texto.contains("grúa") or texto.contains("cortan la calle"):
+		return 90
+	if texto.contains("ruido") or texto.contains("música"):
+		return 300
+	if texto.contains("alcohol") or texto.contains("bebido"):
+		return 500
+	var km := _km_en(texto)
+	if km > 0:
+		return _multa_velocidad(km)
+	if texto.contains("velocidad"):
+		return 300
+	return 200
+
+
+## Exceso de velocidad (límite 50 km/h en el pueblo): de 100 a 600 €.
+func _multa_velocidad(km: int) -> int:
+	var exceso := km - 50
+	if exceso <= 20:
+		return 100
+	if exceso <= 30:
+		return 300
+	if exceso <= 50:
+		return 400
+	return 600
+
+
+func _km_en(texto: String) -> int:
+	var i := texto.find(" km/h")
+	if i < 0:
+		return 0
+	var j := i - 1
+	while j >= 0 and texto[j] >= "0" and texto[j] <= "9":
+		j -= 1
+	return texto.substr(j + 1, i - j - 1).to_int()
+
+
+## Comisión de la central: 30 % en prácticas, hasta 50 % como Coordinador/a del 112.
+func _comision() -> float:
+	return 0.30 + 0.05 * _rango_indice(int(partida["puntos"]))
+
+
+func _plazas_detenidos(v) -> int:
+	if v.tipo == "moto":
+		return 0
+	if v.bono == "detenidos":
+		return 4
+	return 2
+
+
+func _llevar_al_calabozo(v, cuantos: int) -> void:
+	v.incidente = null
+	v.en_emergencia = false
+	v.detenidos_a_bordo = cuantos
+	v.fase = "calabozo"
+	v.estado = "Trasladando detenido"
+	v.cansancio = minf(100.0, v.cansancio + 8.0)
+	_radio(v, "Llevamos %s al calabozo de la comisaría." % ("al detenido" if cuantos == 1 else "a los %d detenidos" % cuantos))
+	v.ir_a(bases["policia"])
+
+
+func _detenidos_en_calabozo(v) -> void:
+	var n: int = v.detenidos_a_bordo
+	v.detenidos_a_bordo = 0
+	stats["detenidos"] += n
+	partida["detenidos_total"] = int(partida["detenidos_total"]) + n
+	_radio(v, "%s en el calabozo de la C/ Lentejuela. Volvemos a patrullar." % ("Detenido ingresado" if n == 1 else "%d detenidos ingresados" % n))
+	if int(partida["detenidos_total"]) >= 10:
+		_dar_logro("detenciones")
+	_regresar(v)
 
 
 # ================================================================ FALLECIMIENTOS Y TRÁMITES
@@ -3178,6 +3433,11 @@ func _informe_incidente(inc) -> void:
 		texto += "\n\n¡Intervención impecable!"
 	if inc.llamadas_relacionadas > 0:
 		texto += "\nLlamadas relacionadas: %d" % inc.llamadas_relacionadas
+	if inc.detenidos > 0:
+		texto += "\nDetenidos: %d (los llevan al calabozo de la C/ Lentejuela)" % inc.detenidos
+	if inc.multas > 0:
+		texto += "\nMultas: %d por %s · Tu comisión (%d %%): +%s" % [inc.multas, Hud.formato_euros(inc.importe_multas),
+			int(round(_comision() * 100.0)), Hud.formato_euros(inc.comision)]
 	hud.mostrar_panel("INFORME · %s · %s" % [inc.id_incidente, inc.titulo], texto, [{"texto": "Aceptar", "accion": _cerrar_panel}])
 	hud.mirar_lugar(inc, true)
 	_consejo("informe", "Cada emergencia resuelta te da dinero según la nota. Con él podrás comprar vehículos y equipo antes del siguiente turno.")
@@ -3447,7 +3707,7 @@ func _vigilar_persecucion() -> void:
 	if sospechoso_acelero or sospechoso == null or not is_instance_valid(sospechoso):
 		return
 	for v in vehiculos:
-		if v.perseguir == sospechoso and v.position.distance_to(sospechoso.position) < 300.0:
+		if v.perseguir == sospechoso and v.bono != "camuflado" and v.position.distance_to(sospechoso.position) < 300.0:
 			sospechoso_acelero = true
 			sospechoso.velocidad = 58.0
 			_radio(v, "¡El vehículo acelera al vernos! Seguimos detrás.")
@@ -3585,6 +3845,8 @@ func _mostrar_menu_pausa() -> void:
 		{"texto": "Mi carrera: rango, logros e investigaciones", "accion": _mostrar_carrera.bind(_mostrar_menu_pausa)},
 		{"texto": "Prueba de mando: %s" % ("activada" if debug_activo else "desactivada"), "accion": _alternar_debug_menu},
 		{"texto": "Configurar botones del mando", "accion": _calibrar_desde_menu},
+		{"texto": "Configurar solo la cruceta", "accion": _cruceta_desde_menu},
+		{"texto": "Restablecer la cruceta (arriba 11, abajo 12, izquierda 13)", "accion": _restablecer_cruceta},
 		{"texto": "Salir del juego", "accion": _salir},
 	])
 
@@ -3613,6 +3875,30 @@ func _empezar_calibracion() -> void:
 	hud.mostrar_calibracion("CONFIGURAR EL MANDO\n\nPulsa el botón X (cruz) del mando de PS4\n\n(Con teclado: pulsa Enter para omitir)")
 
 
+## Configurar solo la cruceta (sin repetir X y Círculo).
+func _empezar_cruceta() -> void:
+	_cerrar_panel()
+	cruceta_temp = {}
+	paso_calibracion = 3
+	hud.mostrar_calibracion("CONFIGURAR LA CRUCETA\n\nPulsa ARRIBA en la cruceta\n(una sola vez y sin tocar nada más)")
+
+
+func _cruceta_desde_menu() -> void:
+	_alternar_pausa()
+	_empezar_cruceta()
+
+
+func _cruceta_desde_portada() -> void:
+	_empezar_cruceta()
+	_programar_menu_tras_calibrar()
+
+
+func _restablecer_cruceta() -> void:
+	Controles.restablecer_cruceta()
+	hud.notificar("Cruceta restablecida: arriba (botón 11), abajo (botón 12) e izquierda (botón 13).", Color("8fd3a0"))
+	_sonido("click")
+
+
 func _calibrar(event: InputEvent) -> void:
 	var tecla := event as InputEventKey
 	if tecla != null and tecla.pressed and tecla.keycode == KEY_ENTER:
@@ -3620,26 +3906,42 @@ func _calibrar(event: InputEvent) -> void:
 		return
 	var b := event as InputEventJoypadButton
 	var m := event as InputEventJoypadMotion
-	# Pasos 3 y 4: la cruceta puede llegar como botón o como eje
+	# Pasos 3, 4 y 5: la cruceta (arriba, abajo, izquierda). Paso 6: confirmar.
+	if paso_calibracion == 6:
+		if b != null and b.pressed and (b.button_index == Controles.boton_sel or b.button_index == boton_x):
+			Controles.guardar_cruceta(cruceta_temp["arriba"], cruceta_temp["abajo"], cruceta_temp["izquierda"])
+			paso_calibracion = 0
+			hud.ocultar_calibracion()
+			hud.notificar("Cruceta configurada: arriba sube, abajo baja e izquierda abre la comisaría.", Color("8fd3a0"))
+		elif b != null and b.pressed and (b.button_index == Controles.boton_can or b.button_index == boton_circulo):
+			_empezar_cruceta()
+		elif tecla != null and tecla.pressed and tecla.keycode == KEY_ESCAPE:
+			_empezar_cruceta()
+		return
 	if paso_calibracion >= 3:
 		var dato := {}
-		if b != null and b.pressed and b.button_index != boton_x and b.button_index != boton_circulo:
+		if b != null and b.pressed and b.button_index != boton_x and b.button_index != boton_circulo \
+				and b.button_index != Controles.boton_sel and b.button_index != Controles.boton_can:
 			dato = {"tipo": "boton", "indice": b.button_index}
-		elif m != null and absf(m.axis_value) > 0.7 and m.axis != JOY_AXIS_LEFT_X and m.axis != JOY_AXIS_LEFT_Y:
+		elif m != null and absf(m.axis_value) > 0.8 and m.axis != JOY_AXIS_LEFT_X and m.axis != JOY_AXIS_LEFT_Y:
 			dato = {"tipo": "eje", "indice": m.axis, "valor": signf(m.axis_value)}
 		elif tecla != null and tecla.pressed and not tecla.echo:
 			dato = {"tipo": "tecla", "indice": tecla.keycode}
 		if dato.is_empty():
 			return
-		if paso_calibracion == 3:
-			nav_abajo = dato
-			paso_calibracion = 4
-			hud.mostrar_calibracion("Abajo guardado\n\nAhora pulsa ARRIBA en la cruceta")
-		elif dato != nav_abajo:
-			Controles.guardar_navegacion(nav_abajo, dato)
-			paso_calibracion = 0
-			hud.ocultar_calibracion()
-			hud.notificar("Mando configurado. Ya puedes moverte por los menús con la cruceta.", Color("8fd3a0"))
+		for ya in cruceta_temp:
+			if cruceta_temp[ya] == dato:
+				hud.mostrar_calibracion("Esa flecha ya es %s (%s).\n\nPulsa otra distinta." % [ya.to_upper(), Controles.describir(dato)])
+				return
+		var orden := ["arriba", "abajo", "izquierda"]
+		var actual: String = orden[paso_calibracion - 3]
+		cruceta_temp[actual] = dato
+		paso_calibracion += 1
+		if paso_calibracion <= 5:
+			hud.mostrar_calibracion("%s guardado (%s)\n\nAhora pulsa %s en la cruceta" % [actual.to_upper(), Controles.describir(dato), orden[paso_calibracion - 3].to_upper()])
+		else:
+			hud.mostrar_calibracion("COMPRUEBA LA CRUCETA\n\nArriba: %s\nAbajo: %s\nIzquierda (comisaría): %s\n\nX: guardar   ·   Círculo: repetir" % [
+				Controles.describir(cruceta_temp["arriba"]), Controles.describir(cruceta_temp["abajo"]), Controles.describir(cruceta_temp["izquierda"])])
 		return
 	if b == null or not b.pressed:
 		return
@@ -3650,8 +3952,9 @@ func _calibrar(event: InputEvent) -> void:
 	elif paso_calibracion == 2 and b.button_index != boton_x:
 		boton_circulo = b.button_index
 		Controles.guardar_configuracion(boton_x, boton_circulo)
+		cruceta_temp = {}
 		paso_calibracion = 3
-		hud.mostrar_calibracion("Círculo guardado (botón %d)\n\nAhora pulsa ABAJO en la cruceta" % boton_circulo)
+		hud.mostrar_calibracion("Círculo guardado (botón %d)\n\nAhora pulsa ARRIBA en la cruceta" % boton_circulo)
 
 
 func _salir() -> void:
@@ -3838,6 +4141,8 @@ func _mostrar_opciones() -> void:
 		{"texto": "Meteorología (lluvia, niebla...): %s" % ("Sí" if opciones["meteo"] else "No"), "accion": _cambiar_opcion.bind("meteo")},
 		{"texto": "Vibración del mando: %s" % ("Sí" if opciones["vibracion"] else "No"), "accion": _cambiar_opcion.bind("vibracion")},
 		{"texto": "Configurar botones del mando", "accion": _calibrar_desde_portada},
+		{"texto": "Configurar solo la cruceta", "accion": _cruceta_desde_portada},
+		{"texto": "Restablecer la cruceta", "accion": _restablecer_cruceta},
 		{"texto": "Volver", "accion": _menu_principal},
 	], true, 190.0, 640.0)
 

@@ -179,7 +179,7 @@ func _dibujar_luces() -> void:
 				var cono := PackedVector2Array([p + dir * 6.0 + lado * 4.0, p + dir * largo + lado * 26.0, p + dir * largo - lado * 26.0, p + dir * 6.0 - lado * 4.0])
 				luces.draw_colored_polygon(cono, Color(1.0, 0.95, 0.75, 0.10 * noche))
 		# Sirenas: destellos rojo y azul que iluminan la calle
-		var sirena: bool = v.en_emergencia or (v.estado == "En intervención")
+		var sirena: bool = v.en_emergencia or (v.estado == "En intervención" and v.tipo != "camuflado")
 		if sirena and v.servicio != "sospechoso":
 			var col := Color(1.0, 0.15, 0.15) if turno else Color(0.2, 0.4, 1.0)
 			if v.servicio == "bomberos" and not turno:
