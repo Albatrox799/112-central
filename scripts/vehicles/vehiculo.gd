@@ -265,7 +265,6 @@ const COLORES_PLACA := {
 	"bomberos": [Color("d64545"), Color("ffffff")],     # placa roja
 	"sospechoso": [Color("ff4d6d"), Color("1a0a10")],
 	"geo": [Color("2b3240"), Color("ffffff")],          # negro, letras blancas
-	"ume": [Color("d4a017"), Color("1e1e1e")],          # amarillo UME
 	"judicial": [Color("6c5a7a"), Color("ffffff")],     # coche sin distintivos
 }
 const COLORES_ESTADO := {

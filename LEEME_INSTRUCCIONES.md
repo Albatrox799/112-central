@@ -28,6 +28,11 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Versión 0.98.1 · Arreglo
+
+- Arreglado: con la 0.98 no aparecían las unidades en el mapa (un dato repetido en la lista de colores de los vehículos impedía cargarlos).
+- Los casos de la Policía Judicial ahora se guardan también al cerrar el juego.
+
 ## Novedades de la versión 0.98
 
 - **Nombres de las unidades:** ya no salen códigos como P-01, sino «Coche patrulla 1», «Moto 1», «Ambulancia 2», «Autobomba 1»…
