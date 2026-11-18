@@ -381,7 +381,7 @@ func _empezar_turno(tipo: String) -> void:
 	hud.set_pausa(false)
 	hud.notificar("Día %d · %s. Central 112 operativa." % [partida["dia"], t["nombre"]])
 	_programar(5.0, _sonar_llamada)
-	_programar(20.0, _evento_aleatorio)
+	_programar(35.0, _evento_aleatorio)
 
 
 # ================================================================ EQUIPOS Y TIENDA
@@ -571,7 +571,7 @@ func _evento_aleatorio() -> void:
 	if en_menu or turno_terminando:
 		return
 	var dificultad := maxf(0.6, 1.0 - (partida["dia"] - 1) * 0.05)
-	var espera := randf_range(22.0, 40.0) if turno == "dia" else randf_range(30.0, 50.0)
+	var espera := randf_range(40.0, 70.0) if turno == "dia" else randf_range(50.0, 80.0)
 	var factor: float = {"tranquila": 1.4, "normal": 1.0, "caotica": 0.7}.get(opciones["dificultad"], 1.0)
 	_programar(espera * dificultad * factor, _evento_aleatorio)
 	var activos := 0
@@ -582,13 +582,18 @@ func _evento_aleatorio() -> void:
 	if activos >= 3 + mini(partida["dia"] - 1, 3) + extra_max:
 		return
 	var r := randf()
-	var prob_llamada := 0.6 if turno == "dia" else 0.5
-	if r < prob_llamada:
+	if r < 0.35:
+		# Llamada que hay que atender
 		if not llamada_sonando and llamada == null:
 			_sonar_llamada()
-	elif r < prob_llamada + 0.15 and sospechoso == null:
+		else:
+			_aviso_directo()
+	elif r < 0.65:
+		# Emergencia menor: solo un aviso y aparece sola en el mapa
+		_aviso_directo()
+	elif r < 0.77 and sospechoso == null:
 		_crear_aviso_trafico()
-	elif r < prob_llamada + 0.27:
+	elif r < 0.9:
 		_crear_incendio()
 	else:
 		_aviso_patrulla()
@@ -1004,28 +1009,43 @@ func _mostrar_incidente(inc) -> void:
 		texto += "\nUnidades: %s" % inc.texto_requeridas()
 	for c in inc.confirmados:
 		texto += "\nCONFIRMADO: %s" % c
-	for i in inc.informacion:
-		texto += "\n· %s" % i
+	for k in range(maxi(0, inc.informacion.size() - 3), inc.informacion.size()):
+		texto += "\n· %s" % inc.informacion[k]
 	if inc.cronologia.size() > 0:
 		texto += "\nÚltimos hechos:"
-		for k in range(maxi(0, inc.cronologia.size() - 4), inc.cronologia.size()):
+		for k in range(maxi(0, inc.cronologia.size() - 2), inc.cronologia.size()):
 			texto += "\n  %s  %s" % [inc.cronologia[k][0], inc.cronologia[k][1]]
 	var opciones := []
 	if inc.activo():
 		var destino: int = inc.nodo_real if inc.precision >= 3 else inc.nodo_aproximado
+		var lista := []
 		for v in vehiculos:
 			var libre: bool = v.disponible()
-			var etiqueta := "Enviar %s (%s) · llega en %s" % [v.id_unidad, v.nombre_servicio(), _texto_segundos(v.tiempo_estimado(destino))]
-			if not libre:
+			var util: bool = inc.requeridas.has(v.servicio) or inc.servicios.has(v.servicio)
+			var t: float = v.tiempo_estimado(destino)
+			# Orden: útiles y libres primero, luego otras libres, luego ocupadas
+			var orden := t + (0.0 if util else 10000.0) + (0.0 if libre else 100000.0)
+			lista.append([orden, v, libre, util, t])
+		lista.sort_custom(func(a, b): return a[0] < b[0])
+		for item in lista:
+			var v = item[1]
+			var etiqueta := "Enviar %s (%s) · llega en %s" % [v.id_unidad, v.nombre_servicio(), _texto_segundos(item[4])]
+			if v.estado == "Regresando":
+				etiqueta += " · desde la vuelta (%d/%d servicios)" % [v.servicios_seguidos, v.limite_seguidos()]
+			if not item[3]:
+				etiqueta += " · como apoyo"
+			if not item[2]:
 				etiqueta = "%s no disponible (%s)" % [v.id_unidad, v.estado]
-			opciones.append({"texto": etiqueta, "accion": _enviar_unidad.bind(v, inc), "activo": libre})
+			opciones.append({"texto": etiqueta, "accion": _enviar_unidad.bind(v, inc), "activo": item[2]})
 	opciones.append({"texto": "Volver al mapa", "accion": _cerrar_panel})
 	hud.mostrar_panel("%s · %s" % [inc.id_incidente, inc.titulo], texto, opciones)
 
 
 # ================================================================ LLAMADAS
 
-func _sonar_llamada() -> void:
+## solo_relacionadas = true: solo suena si hay una llamada relacionada en cola
+## (así no se encadenan llamadas nuevas nada más colgar).
+func _sonar_llamada(solo_relacionadas: bool = false) -> void:
 	if en_menu or llamada_sonando or llamada != null:
 		return
 	# Primero, las llamadas relacionadas con incidentes que ya existen
@@ -1036,7 +1056,7 @@ func _sonar_llamada() -> void:
 			_preparar_llamada_relacionada(inc_rel, par[1])
 			_hacer_sonar()
 			return
-	if turno_terminando:
+	if turno_terminando or solo_relacionadas:
 		return
 	llamada_rel_inc = null
 	llamada_historia = {}
@@ -1152,7 +1172,7 @@ func _llamada_sin_contestar(numero: int) -> void:
 		stats["perdidas"] += 1
 		_cambiar_dinero(-300)
 		hud.notificar("La persona ha colgado: llamada perdida (-300 €).", COLOR_LLAMADA)
-		_programar(3.0, _sonar_llamada)
+		_programar(3.0, _sonar_llamada.bind(true))
 
 
 func _contestar_llamada() -> void:
@@ -1206,14 +1226,14 @@ func _terminar_llamada() -> void:
 		if is_instance_valid(inc_rel):
 			_unir_llamada(inc_rel, llamada)
 		llamada = null
-		_programar(2.0, _sonar_llamada)
+		_programar(2.0, _sonar_llamada.bind(true))
 		return
 	if llamada_datos.get("falsa", false):
 		stats["falsas"] += 1
 		_cambiar_dinero(200)
 		hud.notificar("Llamada sin emergencia real: no se crea ningún incidente (+200 €).", Color("9fb3c8"))
 		llamada = null
-		_programar(2.0, _sonar_llamada)
+		_programar(2.0, _sonar_llamada.bind(true))
 		return
 	var d: Dictionary = llamada_datos["incidente"]
 	var nodo := int(llamada_lugar.get("nodo", red.nodo_mas_cercano(tamano_mapa / 2.0)))
@@ -1265,7 +1285,7 @@ func _terminar_llamada() -> void:
 	hud.notificar("Incidente %s creado: %s (%s)" % [inc.id_incidente, inc.titulo, inc.texto_precision()], COLOR_LLAMADA)
 	_mostrar_incidente(inc)
 	_consejo("incidente", "Elige en la lista qué unidad enviar y pulsa X. Fíjate en los colores del hexágono: blanco ambulancia, azul policía, rojo bomberos.")
-	_programar(2.0, _sonar_llamada)
+	_programar(2.0, _sonar_llamada.bind(true))
 
 
 ## Une una llamada relacionada al incidente que ya existía (sin duplicarlo).
@@ -1344,7 +1364,7 @@ func _ejecutar_evento(inc, ev: Dictionary) -> void:
 		_aplicar_efectos_historia(inc, e)
 	if ev.has("llamada"):
 		cola_relacionadas.append([inc, ev["llamada"]])
-		_sonar_llamada()
+		_sonar_llamada(true)
 	if ev.has("decision"):
 		_mostrar_decision(inc, ev["decision"])
 
@@ -1513,6 +1533,7 @@ func _on_unidad_llega(v) -> void:
 			_radio(v, "Paciente entregado en el Hospital General de Ciudad Real.")
 			_programar(6.0, _regresar.bind(v))
 		"regreso":
+			v.servicios_seguidos = 0
 			v.estado = "Disponible" if v.efectivos() > 0 else "Sin personal"
 			v.fase = ""
 			v.incidente = null
@@ -1546,6 +1567,16 @@ func _comenzar_intervencion(v) -> void:
 	if not inc.requeridas.has(v.servicio):
 		if inc.historia != null:
 			_procesar_historia(inc, "llegada", v.servicio)
+		# Primera respuesta: si aún no ha llegado el servicio principal, se queda
+		# atendiendo (la situación empeora más despacio) hasta que llegue.
+		if int(inc.presentes.get(inc.servicio_necesario, 0)) == 0:
+			v.fase = "primera_respuesta"
+			inc.apoyos.append(v)
+			hud.mostrar_lugar(inc)
+			_radio(v, "Somos los primeros en llegar. Atendemos y tranquilizamos a los afectados hasta que llegue %s." % NOMBRES_SERVICIO.get(inc.servicio_necesario, "el servicio adecuado").to_lower())
+			inc.registrar(_hora(segundos_sim), "%s atiende como primera respuesta" % v.id_unidad)
+			_consejo("primera_respuesta", "Si no tienes la unidad adecuada libre, puedes mandar otra (por ejemplo, la policía) para que atienda mientras tanto: la situación empeora más despacio.")
+			return
 		# Unidad de apoyo: ayuda un rato y se va
 		match v.servicio:
 			"policia":
@@ -1558,6 +1589,8 @@ func _comenzar_intervencion(v) -> void:
 		return
 	inc.en_lugar.append(v)
 	inc.presentes[v.servicio] = int(inc.presentes.get(v.servicio, 0)) + 1
+	if v.servicio == inc.servicio_necesario:
+		_liberar_apoyos(inc, v)
 	if v.servicio == inc.servicio_necesario and inc.tiempo_llegada < 0.0:
 		inc.tiempo_llegada = tiempo_juego
 	hud.mostrar_lugar(inc)
@@ -1586,6 +1619,16 @@ func _comenzar_intervencion(v) -> void:
 				_radio(v, "Llegamos de refuerzo. Todavía falta: %s." % inc.texto_requeridas())
 		_:
 			_radio(v, "Nos unimos a la intervención.")
+
+
+## Cuando llega el servicio principal, las unidades de primera respuesta se van.
+func _liberar_apoyos(inc, llega) -> void:
+	for a in inc.apoyos:
+		if is_instance_valid(a) and a.incidente == inc and a.fase == "primera_respuesta":
+			a.fase = "intervencion"
+			_radio(a, "Ya ha llegado %s. Les dejamos al cargo y nos retiramos." % llega.id_unidad)
+			_programar(3.0, _regresar.bind(a))
+	inc.apoyos.clear()
 
 
 func _iniciar_evento(inc, v) -> void:
@@ -1736,6 +1779,13 @@ func _finalizar_evento(inc, exito: bool) -> void:
 		sospechoso.queue_free()
 		sospechoso = null
 	_informe_incidente(inc)
+	for a in inc.apoyos:
+		if is_instance_valid(a) and a.incidente == inc:
+			_regresar(a)
+	inc.apoyos.clear()
+	for v in inc.en_lugar:
+		if is_instance_valid(v):
+			v.servicios_seguidos += 1
 	for v in inc.en_lugar.duplicate():
 		if is_instance_valid(v) and v.incidente == inc:
 			if v.servicio == "ambulancia" and inc.traslado:
@@ -1879,6 +1929,53 @@ func _vigilar_urgencias() -> void:
 			inc.empeorado = true
 			hud.notificar("%s: la ayuda tarda demasiado, la situación empeora." % inc.id_incidente, COLOR_LLAMADA)
 		_sonido("alerta")
+
+
+# ================================================================ AVISOS DIRECTOS (emergencias menores)
+
+## Emergencia menor que no necesita conversación: llega como aviso a la
+## izquierda de la pantalla y aparece directamente en el mapa.
+func _aviso_directo() -> void:
+	var posibles := []
+	for d in DatosLlamadas.LLAMADAS:
+		if not d.get("falsa", false) and (d["turno"] == turno or d["turno"] == "ambos"):
+			posibles.append(d)
+	if posibles.is_empty():
+		return
+	var datos: Dictionary = posibles[randi() % posibles.size()]
+	var d: Dictionary = datos["incidente"]
+	var lugar := _elegir_lugar(datos["referencias"])
+	var nodo := int(lugar.get("nodo", red.nodo_mas_cercano(tamano_mapa / 2.0)))
+	var calle: String = lugar.get("calle", red.calle_de_nodo(nodo))
+	var inc = Incidente.new()
+	contador_incidentes += 1
+	inc.id_incidente = "INC-%03d" % contador_incidentes
+	inc.categoria = d.get("categoria", "medico")
+	inc.tipo = "incendio" if inc.categoria == "fuego" else "aviso_directo"
+	inc.fuente = "Aviso recibido por la centralita"
+	inc.titulo = d["titulo"]
+	inc.servicios = d["servicios"].duplicate()
+	inc.servicio_necesario = d["principal"]
+	inc.requeridas = d.get("requeridas", {d["principal"]: 1}).duplicate()
+	inc.urgencia_total = float(d["urgencia"]) + 15.0
+	inc.urgencia_restante = inc.urgencia_total
+	inc.traslado = d.get("traslado", false)
+	inc.tiempo_intervencion = d.get("intervencion", 10.0)
+	inc.informacion = ["Aviso de un vecino en %s" % calle, "Cerca de %s" % lugar.get("nombre", "")]
+	inc.precision = 3
+	inc.precision_al_enviar = -1
+	inc.nodo_real = nodo
+	inc.nodo_aproximado = nodo
+	inc.pos_exacta = red.pos(nodo)
+	inc.calma_final = 60
+	inc.tiempo_creacion = tiempo_juego
+	inc.registrar(_hora(segundos_sim), "Aviso recibido: %s" % inc.titulo)
+	inc.actualizar_posicion()
+	mundo.add_child(inc)
+	incidentes.append(inc)
+	hud.notificar("NUEVO AVISO %s: %s en %s. Pulsa Triángulo para verlo." % [inc.id_incidente, inc.titulo, calle], Color("9ff3ff"))
+	_sonido("alerta")
+	_consejo("aviso_directo", "Las emergencias menores llegan como aviso y aparecen solas en el mapa, sin llamada. Ábrelas con Triángulo y manda la unidad.")
 
 
 # ================================================================ AVISOS DE LAS PATRULLAS

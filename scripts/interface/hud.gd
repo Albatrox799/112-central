@@ -135,7 +135,7 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.7", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.7.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
 
 
 # ---------------------------------------------------------------- CONSEJOS (tutorial)
@@ -455,6 +455,19 @@ func _reenfocar() -> void:
 
 func _ajustar(c: Control) -> void:
 	c.reset_size()
+	if c == panel_lateral:
+		call_deferred("_limitar_altura")
+
+
+## Si el panel no cabe en pantalla, se encoge la lista (que tiene barra de
+## desplazamiento) para que siempre se vean todas las opciones bajando.
+func _limitar_altura() -> void:
+	var limite := ALTO - 48.0
+	var sobra := panel_lateral.position.y + panel_lateral.size.y - limite
+	if sobra > 1.0:
+		var nuevo := maxf(scroll_opciones.custom_minimum_size.y - sobra, 120.0)
+		scroll_opciones.custom_minimum_size = Vector2(0, nuevo)
+		panel_lateral.reset_size()
 
 
 func _vaciar(contenedor: Node) -> void:
@@ -701,7 +714,7 @@ func _crear_panel_lateral() -> void:
 	panel_titulo = _etiqueta("", 25, Color("ffd166"))
 	panel_titulo.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(panel_titulo)
-	panel_texto = _etiqueta("", 20, Color("cfd9e6"))
+	panel_texto = _etiqueta("", 18, Color("cfd9e6"))
 	panel_texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(panel_texto)
 	scroll_opciones = ScrollContainer.new()

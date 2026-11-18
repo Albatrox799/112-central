@@ -37,6 +37,7 @@ var confirmados: Array = []
 var llamadas_relacionadas := 0
 var decision_pendiente := false
 var ajuste_estrellas := 0
+var apoyos: Array = []          # unidades de primera respuesta esperando al servicio principal
 
 
 func registrar(hora: String, texto: String) -> void:
@@ -135,7 +136,11 @@ func _process(delta: float) -> void:
 		else:
 			vehiculo_seguido = null
 	if esperando_ayuda():
-		urgencia_restante = maxf(urgencia_restante - delta, 0.0)
+		var factor := 1.0
+		for a in apoyos:
+			if is_instance_valid(a):
+				factor = 0.5   # alguien ya está atendiendo: empeora más despacio
+		urgencia_restante = maxf(urgencia_restante - delta * factor, 0.0)
 	if tipo == "incendio" and activo():
 		_actualizar_humo(delta)
 	queue_redraw()
