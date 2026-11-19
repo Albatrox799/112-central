@@ -33,6 +33,8 @@ var scroll_opciones: ScrollContainer
 var raiz: Control
 var etiqueta_reloj: Label
 var etiqueta_velocidad: Label
+var etiqueta_libres: Label
+var _accion_volver: Callable = Callable()
 var etiqueta_clima: Label
 var etiqueta_pausa: Label
 var caja_notificaciones: VBoxContainer
@@ -74,7 +76,7 @@ var _t_duracion := 0.0
 var _t_aviso := 0.0
 var _t_aviso_total := 25.0
 var _t_icono := 0.0
-const ANCHO_LLAMADA := 540.0
+const ANCHO_LLAMADA := 480.0
 const LETRAS_POR_SEGUNDO := 48.0
 var ll_estado: Label
 var ll_barra: ProgressBar
@@ -175,7 +177,7 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 2.0", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 2.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
 
 
 # ---------------------------------------------------------------- PANTALLA DE CARGA
@@ -429,6 +431,13 @@ func _input(event: InputEvent) -> void:
 			saltar_texto()
 			get_viewport().set_input_as_handled()
 			return
+	# Círculo: vuelve a la pantalla anterior si el panel tiene «Volver…»
+	if panel_lateral.visible and event.is_action_pressed("cancelar") and _accion_volver.is_valid():
+		var volver := _accion_volver
+		_accion_volver = Callable()
+		volver.call_deferred()
+		get_viewport().set_input_as_handled()
+		return
 	var abajo := event.is_action_pressed("nav_abajo")
 	var arriba := event.is_action_pressed("nav_arriba")
 	# Joystick o cruceta como eje: un movimiento solo cuenta una vez hasta soltar
@@ -596,6 +605,11 @@ func set_clima(texto: String, color: Color) -> void:
 	etiqueta_clima.add_theme_color_override("font_color", color)
 
 
+func set_libres(texto: String) -> void:
+	if etiqueta_libres != null:
+		etiqueta_libres.text = texto
+
+
 func set_velocidad(texto: String) -> void:
 	etiqueta_velocidad.text = texto
 
@@ -629,7 +643,7 @@ func notificar(texto: String, color: Color = Color("e8eef6")) -> void:
 
 
 ## opciones: Array de Dictionary {"texto": String, "accion": Callable, "activo": bool (opcional)}
-func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: bool = false, pos_y: float = 90.0, ancho: float = 620.0) -> void:
+func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: bool = false, pos_y: float = 90.0, ancho: float = 620.0, alto_max: float = -1.0) -> void:
 	dejar_de_mirar()
 	if centrado:
 		panel_lateral.custom_minimum_size = Vector2(ancho, 0)
@@ -641,20 +655,38 @@ func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: boo
 	panel_texto.text = texto
 	panel_texto.visible = texto != ""
 	_vaciar(panel_opciones)
+	_accion_volver = Callable()
 	var primero: Button = null
 	for o in opciones:
 		var b := _boton(o["texto"])
 		var activo: bool = o.get("activo", true)
-		if activo:
+		if o.get("cabecera", false):
+			# Título de grupo: no se puede elegir
+			b.disabled = true
+			b.focus_mode = Control.FOCUS_NONE
+			b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+			b.custom_minimum_size = Vector2(0, 34)
+			b.add_theme_color_override("font_disabled_color", Color("ffd166"))
+			b.add_theme_font_size_override("font_size", 18)
+		elif activo:
 			var accion: Callable = o["accion"]
 			b.pressed.connect(func(): accion.call_deferred())
 			if primero == null:
 				primero = b
+			if String(o["texto"]).begins_with("Volver"):
+				_accion_volver = accion
 		else:
-			b.disabled = true
-			b.focus_mode = Control.FOCUS_NONE
+			# Se puede pasar por ella para leerla, pero no se puede elegir
+			b.add_theme_color_override("font_color", Color(0.6, 0.65, 0.72))
+			b.add_theme_color_override("font_focus_color", Color(0.75, 0.8, 0.87))
+			b.add_theme_color_override("font_hover_color", Color(0.75, 0.8, 0.87))
+			b.pressed.connect(func(): notificar("Ahora no se puede: falta dinero o algún requisito.", Color("ffb3b3")))
+		if o.has("color"):
+			b.add_theme_color_override("font_color", o["color"])
+			b.add_theme_color_override("font_focus_color", (o["color"] as Color).lightened(0.3))
 		panel_opciones.add_child(b)
-	scroll_opciones.custom_minimum_size = Vector2(0, minf(opciones.size() * 56.0, 400.0 if centrado else 330.0))
+	var alto: float = alto_max if alto_max > 0.0 else (400.0 if centrado else 330.0)
+	scroll_opciones.custom_minimum_size = Vector2(0, minf(opciones.size() * 56.0, alto))
 	scroll_opciones.scroll_vertical = 0
 	panel_lateral.visible = true
 	call_deferred("_ajustar", panel_lateral)
@@ -666,6 +698,7 @@ func cerrar_panel() -> void:
 	dejar_de_mirar()
 	panel_lateral.visible = false
 	_vaciar(panel_opciones)
+	_accion_volver = Callable()
 	_reenfocar()
 
 
@@ -929,9 +962,11 @@ func _crear_barra_superior() -> void:
 	barra.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	raiz.add_child(barra)
 	var fila := HBoxContainer.new()
-	fila.add_theme_constant_override("separation", 24)
+	fila.add_theme_constant_override("separation", 16)
 	barra.add_child(fila)
-	fila.add_child(_etiqueta("CENTRAL 112 · MIGUELTURRA", 24, Color("ff6b6b")))
+	fila.add_child(_etiqueta("112 · MIGUELTURRA", 22, Color("ff6b6b")))
+	etiqueta_libres = _etiqueta("", 18, Color("cfe3f5"))
+	fila.add_child(etiqueta_libres)
 	var hueco := Control.new()
 	hueco.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fila.add_child(hueco)
@@ -998,7 +1033,7 @@ const COLORES_ESTADO := {
 	"Persecución": Color("8e44ad"), "Regresando": Color("2471a3"),
 	"Patrullando": Color("1e8449"), "Traslado al hospital": Color("7d3c98"),
 	"Reponiendo material": Color("b7950b"), "Sin personal": Color("555555"),
-	"Trasladando detenido": Color("8e44ad"),
+	"Trasladando detenido": Color("8e44ad"), "Averiada": Color("7f8c8d"),
 }
 
 
@@ -1035,14 +1070,14 @@ func _crear_debug() -> void:
 
 func _crear_aviso_llamada() -> void:
 	aviso_llamada = PanelContainer.new()
-	aviso_llamada.position = Vector2(ANCHO / 2.0 - 280.0, 66)
-	aviso_llamada.custom_minimum_size = Vector2(560, 0)
+	aviso_llamada.position = Vector2(14, ALTO - 84 - 132)
+	aviso_llamada.custom_minimum_size = Vector2(400, 0)
 	aviso_llamada.add_theme_stylebox_override("panel", _caja(Color(0.02, 0.12, 0.08, 0.96), 3, 14, Color("3ddc84"), 14))
 	var fila := HBoxContainer.new()
 	fila.add_theme_constant_override("separation", 16)
 	aviso_llamada.add_child(fila)
 	icono_llamada = Control.new()
-	icono_llamada.custom_minimum_size = Vector2(110, 110)
+	icono_llamada.custom_minimum_size = Vector2(72, 72)
 	icono_llamada.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icono_llamada.draw.connect(_dibujar_icono_llamada)
 	fila.add_child(icono_llamada)
@@ -1050,11 +1085,11 @@ func _crear_aviso_llamada() -> void:
 	v.add_theme_constant_override("separation", 6)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fila.add_child(v)
-	var titulo := _etiqueta("LLAMADA ENTRANTE · 112", 28, Color("7dffb3"))
-	titulo.add_theme_constant_override("outline_size", 6)
+	var titulo := _etiqueta("LLAMADA ENTRANTE · 112", 20, Color("7dffb3"))
+	titulo.add_theme_constant_override("outline_size", 4)
 	titulo.add_theme_color_override("font_outline_color", Color(0.1, 0.6, 0.3, 0.6))
 	v.add_child(titulo)
-	aviso_texto = _etiqueta("", 19, Color("d8ffe8"))
+	aviso_texto = _etiqueta("", 16, Color("d8ffe8"))
 	aviso_texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(aviso_texto)
 	boton_contestar = _boton("   Contestar (X)")
@@ -1062,7 +1097,8 @@ func _crear_aviso_llamada() -> void:
 	boton_contestar.add_theme_stylebox_override("normal", _caja(Color("1e8f4e"), 2, 12, Color("3ddc84"), 10))
 	boton_contestar.add_theme_stylebox_override("hover", _caja(Color("1e8f4e"), 2, 12, Color("3ddc84"), 10))
 	boton_contestar.add_theme_stylebox_override("pressed", _caja(Color("27b765"), 2, 12, Color("b9ffd6"), 10))
-	boton_contestar.add_theme_font_size_override("font_size", 24)
+	boton_contestar.add_theme_font_size_override("font_size", 19)
+	boton_contestar.custom_minimum_size = Vector2(0, 38)
 	boton_contestar.pressed.connect(_al_contestar)
 	v.add_child(boton_contestar)
 	aviso_llamada.visible = false
@@ -1071,6 +1107,7 @@ func _crear_aviso_llamada() -> void:
 
 ## Teléfono con ondas y la cuenta atrás antes de que cuelguen.
 func _dibujar_icono_llamada() -> void:
+	icono_llamada.draw_set_transform(Vector2.ZERO, 0.0, Vector2(0.65, 0.65))
 	var c := Vector2(55, 55)
 	var fr := clampf(_t_aviso / maxf(_t_aviso_total, 0.1), 0.0, 1.0)
 	icono_llamada.draw_circle(c, 50.0, Color(0.05, 0.25, 0.15, 1.0))
@@ -1139,7 +1176,7 @@ func _crear_ventana_llamada() -> void:
 	ll_caja_dialogo.add_theme_constant_override("separation", 8)
 	v.add_child(ll_caja_dialogo)
 	ll_scroll_historial = ScrollContainer.new()
-	ll_scroll_historial.custom_minimum_size = Vector2(0, 104)
+	ll_scroll_historial.custom_minimum_size = Vector2(0, 80)
 	ll_scroll_historial.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	ll_caja_dialogo.add_child(ll_scroll_historial)
 	ll_historial = VBoxContainer.new()

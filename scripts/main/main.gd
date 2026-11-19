@@ -738,6 +738,7 @@ func _mostrar_ficha(i: int) -> void:
 			if not hechas.has(m):
 				var dm: Dictionary = Catalogo.MEJORAS_AMBULANCIA[m]
 				opciones.append({"texto": "Mejora: %s (%s): %s" % [dm["nombre"], Hud.formato_euros(dm["precio"]), dm["ayuda"]], "accion": _mejorar_ambulancia.bind(i, m), "activo": dinero >= int(dm["precio"])})
+				opciones[-1]["texto"] += _te_faltan(int(dm["precio"]))
 		opciones.append({"texto": "Convertirla en ambulancia SVA (con médico, 2 heridos) por %s" % Hud.formato_euros(Catalogo.PRECIO_PASAR_A_SVA), "accion": _pasar_a_sva.bind(i), "activo": dinero >= Catalogo.PRECIO_PASAR_A_SVA})
 	if formacion < 2:
 		opciones.append({"texto": "Curso de formación para la tripulación (%s): trabajan más rápido" % Hud.formato_euros(Catalogo.PRECIO_FORMACION),
@@ -747,6 +748,7 @@ func _mostrar_ficha(i: int) -> void:
 		if _equipo_para(e, sv) and not u["equipo"].has(clave):
 			opciones.append({"texto": "Comprar %s (%s): %s" % [e["nombre"], Hud.formato_euros(e["precio"]), e["ayuda"]],
 				"accion": _comprar_equipo.bind(i, clave), "activo": dinero >= int(e["precio"])})
+			opciones[-1]["texto"] += _te_faltan(int(e["precio"]))
 	var mismos := 0
 	for otro in partida["flota"]:
 		if Catalogo.VEHICULOS[otro["tipo"]]["servicio"] == sv:
@@ -837,6 +839,11 @@ func _vender(i: int) -> void:
 	_mostrar_equipos()
 
 
+func _te_faltan(precio: int) -> String:
+	var falta := precio - int(partida["dinero"])
+	return "" if falta <= 0 else "  · te faltan %s" % Hud.formato_euros(falta)
+
+
 func _mostrar_tienda_vehiculos() -> void:
 	var dinero: int = partida["dinero"]
 	var opciones := []
@@ -854,6 +861,7 @@ func _mostrar_tienda_vehiculos() -> void:
 			continue
 		opciones.append({"texto": "%s · %s · Vel. %d · %d plazas · %s%s" % [nombres[d["servicio"]], d["nombre"], int(d["velocidad"]), int(d["plazas"]), Hud.formato_euros(d["precio"]), "" if extra == "" else "\n     " + extra],
 			"accion": _comprar_vehiculo.bind(clave), "activo": dinero >= int(d["precio"])})
+		opciones[-1]["texto"] += _te_faltan(int(d["precio"]))
 	opciones.append({"texto": "Volver a equipos", "accion": _mostrar_equipos})
 	hud.mostrar_panel("TIENDA DE VEHÍCULOS", "Dinero: %s\nCada vehículo nuevo viene con su personal mínimo." % Hud.formato_euros(dinero), opciones, true)
 
@@ -2569,6 +2577,7 @@ func _process(delta: float) -> void:
 		for v in vehiculos:
 			lista.append([v.id_unidad, v.estado, v.color])
 		hud.actualizar_unidades(lista)
+		_actualizar_libres()
 	_t_trafico -= delta
 	if _t_trafico <= 0.0:
 		_t_trafico = 1.0
@@ -2583,6 +2592,21 @@ func _process(delta: float) -> void:
 			elif v.estado == "Patrullando":
 				v.cansancio = maxf(0.0, v.cansancio - 0.5)
 	_comprobar_fin_turno()
+
+
+func _actualizar_libres() -> void:
+	var partes := []
+	for par in [["policia", "Policía"], ["ambulancia", "Ambulancias"], ["bomberos", "Bomberos"]]:
+		var total := 0
+		var libres := 0
+		for v in vehiculos:
+			if v.servicio == par[0] and not v.externo:
+				total += 1
+				if v.disponible():
+					libres += 1
+		if total > 0:
+			partes.append("%s %d/%d" % [par[1], libres, total])
+	hud.set_libres(" · ".join(PackedStringArray(partes)))
 
 
 ## Más atascos en las horas punta del día; calles vacías de madrugada.
@@ -2780,12 +2804,9 @@ func _texto_segundos(s: float) -> String:
 func _aplicar_escala() -> void:
 	if pausa_tactica or (get_tree().paused and en_menu):
 		return
-	var lento: bool = hud.llamada_abierta()
-	Engine.time_scale = velocidades[indice_velocidad] * (0.25 if lento else 1.0)
-	var texto := "Tiempo x%d" % int(velocidades[indice_velocidad])
-	if lento:
-		texto += " · llamada (lento)"
-	hud.set_velocidad(texto)
+	# La llamada ya no cambia la velocidad: se mantiene la que elijas
+	Engine.time_scale = velocidades[indice_velocidad]
+	hud.set_velocidad("Tiempo x%d" % int(velocidades[indice_velocidad]))
 
 
 ## R1 sube la velocidad del tiempo y L1 la baja. L1 en x1 detiene el tiempo.
@@ -3126,10 +3147,17 @@ func _mostrar_lista_emergencias() -> void:
 	var opciones := []
 	if llamada_sonando:
 		opciones.append({"texto": "Contestar la llamada entrante", "accion": _contestar_llamada})
+	var filas := []
 	for inc in incidentes:
 		if inc.activo():
 			var aviso := " · ¡ESPERAN TUS ÓRDENES!" if inc.decision_pendiente else ""
-			opciones.append({"texto": "%s · %s · %s%s" % [inc.id_incidente, inc.titulo, inc.estado, aviso], "accion": _mostrar_incidente.bind(inc)})
+			var nivel := _nivel_urgencia(inc)
+			var marca: String = ["● GRAVE", "● EMPEORA", "● CONTROLADA"][nivel]
+			var col: Color = [Color("ff6b6b"), Color("ffa94d"), Color("aab7c4")][nivel]
+			filas.append([nivel, {"texto": "%s  ·  %s · %s · %s%s" % [marca, inc.id_incidente, inc.titulo, inc.estado, aviso], "accion": _mostrar_incidente.bind(inc), "color": col}])
+	filas.sort_custom(func(a, b): return int(a[0]) < int(b[0]))
+	for f in filas:
+		opciones.append(f[1])
 	var texto := "Elige una emergencia para ver los detalles."
 	if obras.size() > 0:
 		var cortadas := []
@@ -3140,7 +3168,58 @@ func _mostrar_lista_emergencias() -> void:
 	if opciones.is_empty():
 		texto = "No hay emergencias activas en este momento."
 		opciones.append({"texto": "Volver al mapa", "accion": _cerrar_panel})
-	hud.mostrar_panel("EMERGENCIAS ACTIVAS", texto, opciones)
+	hud.mostrar_panel("EMERGENCIAS ACTIVAS", texto, opciones, true, 60.0, 1000.0, 520.0)
+
+
+## 0 = grave (alguien puede morir), 1 = empeora (nadie ha llegado), 2 = controlada.
+func _nivel_urgencia(inc) -> int:
+	if inc.t_ambulancia >= 0.0 or inc.empeorado or inc.decision_pendiente:
+		return 0
+	if inc.esperando_ayuda() and inc.urgencia_restante < 40.0:
+		return 0
+	if inc.esperando_ayuda():
+		return 1
+	return 2
+
+
+## La unidad libre más cercana de cada servicio que todavía falta.
+func _unidades_mas_cercanas(inc) -> Array:
+	var resultado := []
+	if String(inc.evento).begins_with("tramites") or inc.evento == "terminado":
+		return resultado
+	var destino: int = inc.nodo_real if inc.precision >= 3 else inc.nodo_aproximado
+	var servicios := []
+	for sv in inc.servicios:
+		if not servicios.has(sv):
+			servicios.append(sv)
+	for sv in inc.requeridas:
+		if not servicios.has(sv):
+			servicios.append(sv)
+	for sv in servicios:
+		var hace_falta: int = int(inc.requeridas.get(sv, 1))
+		var van := 0
+		for u in inc.unidades:
+			if is_instance_valid(u) and u.servicio == sv and u.incidente == inc:
+				van += 1
+		var faltan := hace_falta - van
+		if faltan <= 0:
+			continue
+		var libres := []
+		for v in vehiculos:
+			if v.servicio == sv and v.disponible() and not v.aereo and v.incidente != inc:
+				libres.append([v.tiempo_estimado(destino), v])
+		libres.sort_custom(func(a, b): return a[0] < b[0])
+		for k in mini(faltan, libres.size()):
+			resultado.append(libres[k][1])
+	return resultado
+
+
+func _mandar_cercanos(inc) -> void:
+	var lista := _unidades_mas_cercanas(inc)
+	for v in lista:
+		if is_instance_valid(inc) and inc.activo():
+			_enviar_unidad(v, inc)
+	_cerrar_panel()
 
 
 func _texto_servicios(inc) -> String:
@@ -3195,17 +3274,45 @@ func _mostrar_incidente(inc) -> void:
 				"accion": _pedir_externo.bind("ume", inc)})
 	if inc.activo():
 		var destino: int = inc.nodo_real if inc.precision >= 3 else inc.nodo_aproximado
+		var cercanos := _unidades_mas_cercanas(inc)
+		if not cercanos.is_empty():
+			var ids := []
+			for v in cercanos:
+				ids.append(v.id_unidad)
+			opciones.push_front({"texto": ">> MANDAR LO MÁS CERCANO: %s" % ", ".join(PackedStringArray(ids)), "accion": _mandar_cercanos.bind(inc), "color": Color("7dffb3")})
+		# Unidades agrupadas por servicio; dentro de cada uno, de la más cercana a la más lejana
+		var orden_sv := []
+		for sv in inc.servicios:
+			if not orden_sv.has(sv):
+				orden_sv.append(sv)
+		for sv in inc.requeridas:
+			if not orden_sv.has(sv):
+				orden_sv.append(sv)
+		for v in vehiculos:
+			if not orden_sv.has(v.servicio):
+				orden_sv.append(v.servicio)
 		var lista := []
 		for v in vehiculos:
 			var libre: bool = v.disponible()
 			var util: bool = inc.requeridas.has(v.servicio) or inc.servicios.has(v.servicio)
 			var t: float = v.tiempo_estimado(destino)
-			# Orden: útiles y libres primero, luego otras libres, luego ocupadas
-			var orden := t + (0.0 if util else 10000.0) + (0.0 if libre else 100000.0)
+			var orden := orden_sv.find(v.servicio) * 1000000.0 + (0.0 if libre else 100000.0) + t
 			lista.append([orden, v, libre, util, t])
 		lista.sort_custom(func(a, b): return a[0] < b[0])
+		var sv_actual := ""
 		for item in lista:
 			var v = item[1]
+			if v.servicio != sv_actual:
+				sv_actual = v.servicio
+				var libres := 0
+				var total := 0
+				for otro in vehiculos:
+					if otro.servicio == sv_actual:
+						total += 1
+						if otro.disponible():
+							libres += 1
+				var nombre_sv: String = NOMBRES_SERVICIO.get(sv_actual, sv_actual)
+				opciones.append({"texto": "—— %s · %d de %d libres%s ——" % [nombre_sv.to_upper(), libres, total, "" if item[3] else " · como apoyo"], "accion": _cerrar_panel, "cabecera": true})
 			var etiqueta := "Enviar %s (%s) · llega en %s" % [v.id_unidad, v.nombre_servicio(), _texto_segundos(item[4])]
 			if v.estado == "Regresando":
 				etiqueta += " · desde la vuelta (%d/%d servicios)" % [v.servicios_seguidos, v.limite_seguidos()]
@@ -4621,7 +4728,11 @@ func _finalizar_evento(inc, exito: bool) -> void:
 		if is_instance_valid(a) and a.incidente == inc:
 			a.servicios_seguidos += 1
 			a.xp_turno += 1
-			_regresar(a)
+			if a.camillas > 0 and inc.traslado and inc.exito and not inc.en_lugar.has(a):
+				# La ambulancia que ha atendido también puede llevarse al herido
+				inc.en_lugar.append(a)
+			else:
+				_regresar(a)
 	inc.apoyos.clear()
 	for v in inc.en_lugar:
 		if is_instance_valid(v):
@@ -4870,6 +4981,7 @@ func _mostrar_mejoras() -> void:
 		else:
 			opciones.append({"texto": "Construir %s (%s): %s" % [m["nombre"], Hud.formato_euros(m["precio"]), m["ayuda"]],
 				"accion": _comprar_mejora.bind(clave), "activo": int(partida["dinero"]) >= int(m["precio"])})
+			opciones[-1]["texto"] += _te_faltan(int(m["precio"]))
 	opciones.append({"texto": "Volver a equipos", "accion": _mostrar_equipos})
 	hud.mostrar_panel("MEJORAS DE LAS BASES", "Dinero: %s" % Hud.formato_euros(partida["dinero"]), opciones, true)
 
@@ -5500,8 +5612,11 @@ func _informe_incidente(inc) -> void:
 	if inc.multas > 0:
 		texto += "\nMultas: %d por %s · Tu comisión (%d %%): +%s" % [inc.multas, Hud.formato_euros(inc.importe_multas),
 			int(round(_comision() * 100.0)), Hud.formato_euros(inc.comision)]
-	hud.mostrar_panel("INFORME · %s · %s" % [inc.id_incidente, inc.titulo], texto, [{"texto": "Aceptar", "accion": _cerrar_panel}])
-	hud.mirar_lugar(inc, true)
+	# Ya no hay que aceptar el informe: se guarda solo y sale un aviso
+	inc.registrar(_hora(segundos_sim), "Informe: %d de 5 · +%s" % [estrellas, Hud.formato_euros(pago)])
+	var col := Color("6ee7b7") if estrellas >= 4 else (Color("ffd166") if estrellas >= 3 else Color("ff9f80"))
+	hud.notificar("%s RESUELTA · %s · %d de 5 · +%s" % [inc.id_incidente, inc.titulo, estrellas, Hud.formato_euros(pago)], col)
+
 	_consejo("informe", "Cada emergencia resuelta te da dinero según la nota. Con él podrás comprar vehículos y equipo antes del siguiente turno.")
 
 
@@ -5649,6 +5764,36 @@ func _aviso_patrulla(forzado = null) -> void:
 	mundo.add_child(inc)
 	incidentes.append(inc)
 	_radio(v, "Central, vemos: %s en %s. ¿Intervenimos?" % [o[0].to_lower(), calle])
+	_preguntar_patrulla(v, inc)
+
+
+## Cuando una patrulla se encuentra algo, siempre te pregunta qué hacer.
+func _preguntar_patrulla(v, inc) -> void:
+	if en_menu or hud.llamada_abierta() or hud.panel_abierto():
+		hud.notificar("%s pregunta si interviene en %s (%s). Ábrelo en Emergencias (Triángulo)." % [v.id_unidad, inc.id_incidente, inc.titulo], Color("9ff3ff"))
+		return
+	_marcar_seleccion(inc)
+	camara.position = inc.position
+	var opciones := [
+		{"texto": "Sí, intervenid vosotros", "accion": _respuesta_patrulla.bind(v, inc, "si")},
+		{"texto": "No, seguid patrullando: mando a otra unidad", "accion": _respuesta_patrulla.bind(v, inc, "otra")},
+		{"texto": "Ahora no: lo dejamos en la lista de emergencias", "accion": _respuesta_patrulla.bind(v, inc, "luego")},
+	]
+	hud.mostrar_panel("LA PATRULLA PREGUNTA · %s" % v.id_unidad, "«Central, vemos: %s. ¿Intervenimos?»\n\n%s" % [String(inc.titulo).to_lower(), inc.informacion[0] if inc.informacion.size() > 0 else ""], opciones)
+
+
+func _respuesta_patrulla(v, inc, que: String) -> void:
+	_cerrar_panel()
+	if not is_instance_valid(inc) or not inc.activo():
+		return
+	if que == "si" and is_instance_valid(v) and v.disponible():
+		_enviar_unidad(v, inc)
+	elif que == "otra":
+		if is_instance_valid(v):
+			_radio(v, "Recibido, seguimos patrullando.")
+		_mostrar_incidente(inc)
+	elif is_instance_valid(v):
+		_radio(v, "Recibido, central. Lo dejamos anotado.")
 
 
 # ================================================================ INCENDIOS

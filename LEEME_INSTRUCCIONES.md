@@ -28,6 +28,18 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 2.1 (comodidad con el mando)
+- En las tiendas y mejoras puedes pasar por todo aunque no tengas dinero: ves el precio y «te faltan X €».
+- En la ficha de un incidente, las unidades salen agrupadas por servicio (policía, bomberos, ambulancias...) y, dentro de cada uno, de la más cercana a la más lejana. Arriba del todo: «MANDAR LO MÁS CERCANO», que manda de golpe la unidad libre más cercana de cada servicio que falte.
+- Al coger una llamada el tiempo ya no se pone lento: sigue a la velocidad que tengas.
+- El aviso de llamada entrante es más pequeño y sale abajo a la izquierda; la ventana de la llamada es más estrecha.
+- Ya no hay que aceptar el informe al terminar una emergencia: sale un aviso con la nota y el dinero, y queda guardado.
+- Emergencias activas: lista grande en el centro, ordenada por urgencia y con colores (rojo grave, naranja empeora, gris controlada).
+- Cuando una patrulla se encuentra algo, te pregunta qué hacer: intervenir, seguir patrullando y mandar otra unidad, o dejarlo para luego.
+- Círculo: vuelve a la pantalla anterior en cualquier menú.
+- Arriba, siempre a la vista: unidades libres de policía, ambulancias y bomberos.
+- Arreglo: la ambulancia básica que atiende al herido también se lo lleva al hospital (ya no pide otra ambulancia sin motivo).
+
 ## Novedades de la versión 2.0
 - **Mini eventos nuevos**: cada tipo de emergencia tiene su propia escena (contenedor, coche, nave o campo ardiendo; tractor volcado, derrumbe, riada; parto, atropello, atentado; pelea masiva o con armas; atraco a banco, tienda o finca; fiesta, bomba con robot TEDAX, trompos; búsqueda en el embalse). Hay lluvia, tormenta y nieve en la escena.
 - **Detectives**: más denuncias que se pueden investigar y más pasos distintos. A veces encuentran una prueba y tú decides si va al laboratorio (lenta pero segura) o si se sigue interrogando (rápido, pero algún testigo puede mentir: pistas «dudosas»). Puedes interrogar a 2 sospechosos por caso.
