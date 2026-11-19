@@ -28,6 +28,17 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 2.0
+- **Mini eventos nuevos**: cada tipo de emergencia tiene su propia escena (contenedor, coche, nave o campo ardiendo; tractor volcado, derrumbe, riada; parto, atropello, atentado; pelea masiva o con armas; atraco a banco, tienda o finca; fiesta, bomba con robot TEDAX, trompos; búsqueda en el embalse). Hay lluvia, tormenta y nieve en la escena.
+- **Detectives**: más denuncias que se pueden investigar y más pasos distintos. A veces encuentran una prueba y tú decides si va al laboratorio (lenta pero segura) o si se sigue interrogando (rápido, pero algún testigo puede mentir: pistas «dudosas»). Puedes interrogar a 2 sospechosos por caso.
+- **Grandes historias que siempre vuelven**: cuando cierras una, empieza otra en otro sitio del pueblo (red de narcotráfico, pirómano, banda de atracadores, falso revisor del gas...). Los detectives te dan pistas («actúa de noche») y los pasos ya no dependen del turno. Los culpables van a **juicio**: si los condenan, +reputación y dinero; si salen absueltos, la prensa te critica.
+- **UME y bomberos**: la UME también apaga incendios. Nuevo **helicóptero de bomberos** (fuegos de campo y rescates mucho más rápidos).
+- **Helicóptero de policía más útil**: patrulla desde el aire, descubre cosas, ayuda mucho en búsquedas y en persecuciones (no detiene, pero no deja escapar al coche).
+- **Persecuciones con varias patrullas**: puedes mandar más unidades; entre varias le cortan el paso.
+- **Mejoras de la ambulancia básica**: motor, técnico, equipamiento, 4x4 para el campo, o pasarla a soporte vital avanzado.
+- **El Ayuntamiento financia**: más objetivos diarios, objetivos semanales, subvención según tu reputación, ayudas al subir de rango y tras una catástrofe. El alcalde recorta si la reputación baja.
+- **Pueblo vivo**: vecinos que llaman una y otra vez (se les reconoce), convenios con pueblos vecinos para pedir una ambulancia o patrulla prestada, averías de vehículos (con taller propio se arreglan antes), aviso de hora punta, charla por la emisora, testigos que vuelven a llamar por la misma emergencia con datos nuevos, prensa en las grandes emergencias, quejas del alcalde si dejas el pueblo sin policía o sin ambulancias, y días especiales nuevos (ola de calor y final de fútbol en la plaza). Las catástrofes salen solo de vez en cuando, nunca en días seguidos.
+
 ## Novedades de la versión 1.1
 
 - **Plantilla de personal** (en Equipos → Plantilla): cada persona tiene nombre, servicio, experiencia, nivel, habilidades y moral, y puede estar en un vehículo, en la **reserva** o de baja. Las partidas guardadas pasan su personal a la plantilla automáticamente.

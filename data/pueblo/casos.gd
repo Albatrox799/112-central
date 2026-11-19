@@ -31,7 +31,12 @@ const PASOS := [
 	{"titulo": "Preguntar a los vecinos", "lugar": ["plaza", "parque", "iglesia"], "radio": "Una vecina vio algo esa noche."},
 	{"titulo": "Vigilar un punto de venta de objetos robados", "lugar": ["bar", "industrial", "parque"], "radio": "Tras horas de vigilancia, hemos visto al que vende lo robado."},
 	{"titulo": "Hablar con un confidente", "lugar": ["bar", "plaza"], "radio": "El confidente nos ha dado un dato a cambio de un favor."},
+	{"titulo": "Revisar los movimientos de una tarjeta", "lugar": ["comercio", "supermercado"], "radio": "La tarjeta robada se usó aquí: las cámaras lo grabaron."},
+	{"titulo": "Registrar un trastero con orden judicial", "lugar": ["edificio", "industrial"], "radio": "En el trastero aparecen objetos robados y algo más."},
+	{"titulo": "Seguir a un sospechoso hasta su casa", "lugar": ["edificio", "parque"], "radio": "Seguimiento discreto: sabemos dónde vive y con quién se junta."},
+	{"titulo": "Buscar en un desguace", "lugar": ["industrial", "finca"], "radio": "En el desguace reconocen el vehículo y a quien lo trajo."},
 ]
 
 ## Palabras de las denuncias que se pueden investigar.
-const INVESTIGABLES := ["rob", "estaf", "peg", "agred", "desapare", "quitad", "sacad", "forzad", "romp", "rajad", "claves", "tirón", "entrad", "dinero"]
+const INVESTIGABLES := ["rob", "estaf", "peg", "agred", "desapare", "quitad", "sacad", "forzad", "romp", "rajad", "claves", "tirón", "entrad", "dinero",
+	"amenaz", "pintad", "quemad", "incendi", "acos", "chantaj", "suplant", "tarjeta", "móvil", "bici", "perro", "envenen"]

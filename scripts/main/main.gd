@@ -70,7 +70,8 @@ const DESC_BONO := {
 	"anfibio": "Rescate en riadas e inundaciones, con bombas de achique.",
 	"detectives": "Investigan las denuncias paso a paso hasta detener al culpable.",
 	"heli_sanitario": "Vuela en línea recta: ideal para avisos en el campo, el monte o la pedanía. Traslada al hospital en un momento. 350 € de combustible por salida.",
-	"heli_policia": "Vuela en línea recta: busca personas y sospechosos desde el aire y guía a las patrullas (no detiene). 350 € de combustible por salida.",
+	"heli_bomberos": "Vuela en línea recta con un helibalde: apaga muy rápido los fuegos de campo y del monte y rescata en riadas, el embalse o el monte. 350 € de combustible por salida.",
+	"heli_policia": "Vuela en línea recta: busca personas con cámara térmica, no pierde a los coches en las persecuciones, guía a las patrullas, hace vigilancias aéreas y ayuda en los avisos grandes (no detiene). 350 € de combustible por salida.",
 }
 const Pueblo = preload("res://data/pueblo/pueblo.gd")
 const Casos = preload("res://data/pueblo/casos.gd")
@@ -172,6 +173,9 @@ var ultimo_evento := "(pulsa cualquier botón)"
 var _t_barra := 0.0
 var unidad_a_enviar = null   # unidad elegida con X que espera destino en el mapa
 var _t_trafico := 0.0
+var _t_vacio := {"policia": 0.0, "ambulancia": 0.0}
+var _queja_vacio := {}
+var _hora_punta := false
 # --- Vida del pueblo (0.9) y sucesos (0.95)
 var evento_hoy := ""          # fiesta o día especial activo en este turno
 var pos_evento := Vector2.ZERO
@@ -432,6 +436,10 @@ func _construir_flota() -> void:
 		v.tripulacion = u["nombres"].duplicate()
 		_datos_tripulacion(v, i)
 		v.factor_taller = 1.05 if _tiene_mejora("taller") else 1.0
+		v.mejoras_amb = (u.get("mejoras_amb", []) as Array).duplicate()
+		var pr: Array = datos_mapa.get("pueblo_rect", [])
+		if pr.size() == 4:
+			v.rect_pueblo = Rect2(float(pr[0]), float(pr[1]), float(pr[2]), float(pr[3]))
 		v.indice_flota = i
 		v.aereo = bool(datos.get("aereo", false))
 		v.camillas = int(datos.get("camillas", 0))
@@ -509,9 +517,9 @@ func _si_mismo_turno(id: int, accion: Callable) -> void:
 func _partida_nueva() -> Dictionary:
 	return {"dia": 1, "turnos": 0, "resueltas": 0, "estrellas": 0, "valoradas": 0,
 		"dinero": Catalogo.DINERO_INICIAL, "flota": Catalogo.FLOTA_INICIAL.duplicate(true),
-		"vistas": [], "reputacion": 50.0, "puntos": 0, "logros": [], "historial": [], "arcos": {},
+		"vistas": [], "reputacion": 50.0, "puntos": 0, "logros": [], "historial": [], "arcos": {}, "arcos_din": {}, "juicios": [], "contador_arcos": 0,
 		"evento_dia": {}, "eventos_vistos": [], "denuncias_tramitadas": 0, "pc_regalado": false, "detenidos_total": 0,
-		"casos": [], "contador_casos": 0, "mapa_ampliado": true, "calabozo": 0, "plantilla": [], "mejoras": [], "psicologo": false}
+		"casos": [], "contador_casos": 0, "mapa_ampliado": true, "calabozo": 0, "plantilla": [], "mejoras": [], "psicologo": false, "semana": {}, "vecinos": {}, "ultima_catastrofe": -9}
 
 
 func _cargar_partida() -> void:
@@ -618,7 +626,8 @@ func _empezar_turno(tipo: String) -> void:
 	stats = {"llamadas": 0, "falsas": 0, "perdidas": 0, "resueltas": 0, "estrellas": 0,
 		"valoradas": 0, "tiempo_total": 0.0, "con_tiempo": 0, "empeoradas": 0, "ingresos": 0, "heridos": 0,
 		"historias": 0, "historias_buenas": 0, "relacionadas": 0, "fallecidos": 0, "sucesos": [],
-		"titular_especial": "", "logros_nuevos": [], "detenidos_huida": 0, "detenidos": 0, "multas": 0, "comision": 0}
+		"titular_especial": "", "logros_nuevos": [], "detenidos_huida": 0, "detenidos": 0, "multas": 0, "comision": 0,
+		"ayudas": 0, "ayudas_texto": [], "casos_resueltos": 0, "rurales": 0, "prensa": [], "quejas": 0}
 	cola_relacionadas.clear()
 	llamadas_turno.clear()
 	var presos := int(partida.get("calabozo", 0))
@@ -627,6 +636,8 @@ func _empezar_turno(tipo: String) -> void:
 		partida["calabozo"] = presos - salen
 		hud.notificar("El juzgado se ha llevado a %d presos del calabozo (quedan %d de %d plazas)." % [salen, int(partida["calabozo"]), _plazas_calabozo()], Color("9fc7e8"))
 	hud.set_calabozo(int(partida.get("calabozo", 0)), _plazas_calabozo())
+	_celebrar_juicios()
+	_asegurar_historia_principal()
 	_elegir_objetivos()
 	var t: Dictionary = TURNOS[tipo]
 	segundos_sim = float(t["inicio"]) * 3600.0
@@ -721,6 +732,13 @@ func _mostrar_ficha(i: int) -> void:
 				opciones.append({"texto": "Traer de la reserva a %s" % _texto_persona_corto(p), "accion": _asignar_persona.bind(_plantilla().find(p), i, true)})
 	if int(u["personal"]) > 1:
 		opciones.append({"texto": "Pasar a la reserva a la persona menos experta (ahorra sueldo)", "accion": _despedir.bind(i)})
+	if u["tipo"] == "ambulancia_b":
+		var hechas: Array = u.get("mejoras_amb", [])
+		for m in Catalogo.MEJORAS_AMBULANCIA:
+			if not hechas.has(m):
+				var dm: Dictionary = Catalogo.MEJORAS_AMBULANCIA[m]
+				opciones.append({"texto": "Mejora: %s (%s): %s" % [dm["nombre"], Hud.formato_euros(dm["precio"]), dm["ayuda"]], "accion": _mejorar_ambulancia.bind(i, m), "activo": dinero >= int(dm["precio"])})
+		opciones.append({"texto": "Convertirla en ambulancia SVA (con médico, 2 heridos) por %s" % Hud.formato_euros(Catalogo.PRECIO_PASAR_A_SVA), "accion": _pasar_a_sva.bind(i), "activo": dinero >= Catalogo.PRECIO_PASAR_A_SVA})
 	if formacion < 2:
 		opciones.append({"texto": "Curso de formación para la tripulación (%s): trabajan más rápido" % Hud.formato_euros(Catalogo.PRECIO_FORMACION),
 			"accion": _formar.bind(i), "activo": dinero >= Catalogo.PRECIO_FORMACION})
@@ -737,6 +755,28 @@ func _mostrar_ficha(i: int) -> void:
 		opciones.append({"texto": "Vender este vehículo (+%s)" % Hud.formato_euros(int(datos["precio"]) / 2), "accion": _vender.bind(i)})
 	opciones.append({"texto": "Volver a equipos", "accion": _mostrar_equipos})
 	hud.mostrar_panel("%s · %s" % [id, datos["nombre"]], texto, opciones, true)
+
+
+func _mejorar_ambulancia(i: int, m: String) -> void:
+	var u: Dictionary = partida["flota"][i]
+	if not u.has("mejoras_amb"):
+		u["mejoras_amb"] = []
+	(u["mejoras_amb"] as Array).append(m)
+	_cambiar_dinero(-int(Catalogo.MEJORAS_AMBULANCIA[m]["precio"]))
+	_guardar_partida()
+	_sonido("envio")
+	hud.notificar("Ambulancia mejorada: %s." % Catalogo.MEJORAS_AMBULANCIA[m]["nombre"], Color("8fd3a0"))
+	_mostrar_ficha(i)
+
+
+func _pasar_a_sva(i: int) -> void:
+	var u: Dictionary = partida["flota"][i]
+	u["tipo"] = "ambulancia_sva"
+	_cambiar_dinero(-Catalogo.PRECIO_PASAR_A_SVA)
+	_guardar_partida()
+	_sonido("envio")
+	hud.notificar("La ambulancia ya es de soporte vital avanzado: lleva médico y 2 heridos.", Color("8fd3a0"))
+	_mostrar_ficha(i)
 
 
 func _formar(i: int) -> void:
@@ -909,7 +949,16 @@ func _mostrar_resumen() -> void:
 	partida["valoradas"] += stats["valoradas"]
 	texto += _cierre_de_carrera()
 	_guardar_partida()
-	texto += "\n\nObjetivos del turno:" + _texto_objetivos(true)
+	texto += "\n\nObjetivos del Ayuntamiento para el turno:" + _texto_objetivos(true)
+	texto += _texto_semana()
+	if int(stats.get("ayudas", 0)) > 0:
+		partida["dinero"] = int(partida["dinero"]) + int(stats["ayudas"])
+		hud.set_dinero(partida["dinero"])
+		texto += "\n\nAyudas extra del Ayuntamiento:\n· " + "\n· ".join(PackedStringArray(stats["ayudas_texto"]))
+	if not (stats["prensa"] as Array).is_empty():
+		texto += "\n\nLo que cuenta la prensa:\n· " + "\n· ".join(PackedStringArray(stats["prensa"]))
+	if int(stats["quejas"]) > 0:
+		texto += "\nQuejas por dejar el pueblo sin servicio: %d" % int(stats["quejas"])
 	if stats["historias"] > 0:
 		texto += "\nHistorias: %d (con buen final: %d) · Llamadas relacionadas: %d" % [stats["historias"], stats["historias_buenas"], stats["relacionadas"]]
 	tutorial_activo = false
@@ -1098,7 +1147,7 @@ func _evento_del_dia() -> String:
 
 
 func _preparar_vida_del_pueblo() -> void:
-	externos_usados = {"guardia_civil": 0, "ume": 0}
+	externos_usados = {"guardia_civil": 0, "ume": 0, "convenio": 0}
 	denuncias.clear()
 	hud.set_comisaria(0)
 	etapas_programadas.clear()
@@ -1120,6 +1169,10 @@ func _preparar_vida_del_pueblo() -> void:
 	efectos.zona_evento = {} if evento_hoy == "" else {"pos": pos_evento, "nombre": Pueblo.EVENTOS[evento_hoy]["nombre"]}
 	# Obras en alguna calle
 	_poner_obras(1 + randi() % 2)
+	# Charla por la emisora y control del pueblo vacío
+	_t_vacio = {"policia": 0.0, "ambulancia": 0.0}
+	_queja_vacio = {}
+	_programar(randf_range(50.0, 90.0), _charla_radio)
 	# Comisaría: denuncias de los vecinos
 	_programar(randf_range(120.0, 260.0), _llega_denuncia)
 	# Investigaciones en marcha
@@ -1289,6 +1342,9 @@ func _dar_logro(id: String) -> void:
 
 ## Se llama al cerrar cada emergencia: reputación, puntos, historial, logros e investigaciones.
 func _al_cerrar_incidente(inc, estrellas: int) -> void:
+	var pr: Array = datos_mapa.get("pueblo_rect", [])
+	if pr.size() == 4 and not Rect2(float(pr[0]), float(pr[1]), float(pr[2]), float(pr[3])).has_point(inc.pos_exacta):
+		stats["rurales"] = int(stats.get("rurales", 0)) + 1
 	if inc.fallecidos > 0:
 		var baja := 8 if partida.get("psicologo", false) else 15
 		for v in inc.en_escena:
@@ -1311,26 +1367,35 @@ func _al_cerrar_incidente(inc, estrellas: int) -> void:
 	if inc.exito and inc.cadena == "huida":
 		_dar_logro("persecucion")
 	if inc.arco != "":
-		var etapa: Dictionary = Pueblo.ARCOS[inc.arco]["etapas"][inc.etapa_arco]
+		var etapa: Dictionary = _arcos()[inc.arco]["etapas"][inc.etapa_arco]
 		if inc.exito or etapa.get("siempre_avanza", false):
 			_avanzar_arco(inc.arco, inc.etapa_arco)
 		else:
-			hud.notificar("%s: esta vez no ha salido bien. La investigación seguirá en otro turno." % Pueblo.ARCOS[inc.arco]["nombre"], Color("ff8a65"))
+			hud.notificar("%s: esta vez no ha salido bien. La investigación seguirá en otro turno." % _arcos()[inc.arco]["nombre"], Color("ff8a65"))
 
 
 ## Al terminar el turno: presupuesto, rango y logros. Devuelve el texto para el resumen.
 func _cierre_de_carrera() -> String:
 	var texto := ""
-	var sub := Catalogo.SUBVENCION_BASE + int(float(partida["reputacion"]) * 20.0)
+	var sub := _subvencion()
 	partida["dinero"] = int(partida["dinero"]) + sub
 	hud.set_dinero(partida["dinero"])
 	var cambio := float(partida["reputacion"]) - float(stats.get("reputacion_inicio", partida["reputacion"]))
 	texto += "\nReputación en el pueblo: %d/100 (%s%d)" % [int(partida["reputacion"]), "+" if cambio >= 0.0 else "", int(round(cambio))]
-	texto += "\nPresupuesto del ayuntamiento: +%s" % Hud.formato_euros(sub)
+	texto += "\nPresupuesto del Ayuntamiento: +%s" % Hud.formato_euros(sub)
+	var rep := float(partida["reputacion"])
+	if rep < 30.0:
+		texto += "\nEl alcalde: «Así no podemos seguir. Si la central no mejora, seguiré recortando el presupuesto.»"
+	elif rep >= 75.0:
+		texto += "\nEl alcalde: «Estamos muy orgullosos de la central. Seguiremos apostando por vosotros.»"
 	var antes := int(stats.get("rango_inicio", 0))
 	var ahora := _rango_indice(int(partida["puntos"]))
 	if ahora > antes:
 		texto += "\n\n¡ASCENSO! Ahora eres %s." % Pueblo.RANGOS[ahora][1]
+		var ayuda := 6000 * ahora
+		partida["dinero"] = int(partida["dinero"]) + ayuda
+		hud.set_dinero(partida["dinero"])
+		texto += "\nEl Ayuntamiento te felicita con una ayuda de %s para equipar la central." % Hud.formato_euros(ayuda)
 	else:
 		texto += "\nRango: %s (%d puntos)" % [Pueblo.RANGOS[ahora][1], int(partida["puntos"])]
 	if ahora >= 3:
@@ -1357,13 +1422,22 @@ func _cierre_de_carrera() -> String:
 	return texto
 
 
+## Presupuesto por turno: sube mucho con la reputación; con mala reputación, recortes.
+func _subvencion() -> int:
+	var rep := float(partida["reputacion"])
+	var sub := 800 + int(rep * 40.0)
+	if rep < 30.0:
+		sub = int(sub * 0.6)
+	return sub
+
+
 func _mostrar_carrera(volver: Callable) -> void:
 	var idx := _rango_indice(int(partida["puntos"]))
 	var texto := "Rango: %s · %d puntos" % [Pueblo.RANGOS[idx][1], int(partida["puntos"])]
 	if idx + 1 < Pueblo.RANGOS.size():
 		texto += "\nSiguiente rango: %s (faltan %d puntos)" % [Pueblo.RANGOS[idx + 1][1], int(Pueblo.RANGOS[idx + 1][0]) - int(partida["puntos"])]
 	texto += "\nReputación en el pueblo: %d/100 · Presupuesto por turno: %s" % [int(partida["reputacion"]),
-		Hud.formato_euros(Catalogo.SUBVENCION_BASE + int(float(partida["reputacion"]) * 20.0))]
+		Hud.formato_euros(_subvencion())]
 	texto += "\nLogros: %d de %d · Denuncias tramitadas: %d" % [partida["logros"].size(), Pueblo.LOGROS.size(), int(partida["denuncias_tramitadas"])]
 	var inv := _texto_investigaciones(false)
 	texto += "\n\n" + (inv if inv != "" else "Investigaciones: todavía no hay ninguna abierta (empiezan a partir del día 3).")
@@ -1658,6 +1732,7 @@ func _mostrar_caso(i: int) -> void:
 	texto += "\n\nSospechosos:"
 	for s_ in c["sospechosos"]:
 		texto += "\n· %s: %s" % [s_["nombre"], _texto_rasgos(s_["rasgos"])]
+	var interrogados: Array = c.get("interrogados", [])
 	if c.get("banda", false) and int(c["hechos"]) >= 2:
 		texto += "\n\n¡Las huellas coinciden con otros robos del barrio: es una banda!"
 	var opciones := []
@@ -1667,6 +1742,14 @@ func _mostrar_caso(i: int) -> void:
 		elif int(c["hechos"]) < pasos.size():
 			var paso: Dictionary = Casos.PASOS[int(pasos[int(c["hechos"])]["paso"])]
 			opciones.append({"texto": "Mandar a los detectives: %s" % paso["titulo"], "accion": _lanzar_paso_caso.bind(i), "activo": not en_menu})
+		if c.get("decision", false):
+			texto += "\n\nLos detectives han encontrado %s. ¿Qué hacemos?" % c.get("prueba", "una prueba")
+			opciones.append({"texto": "Mandar la prueba al laboratorio (tarda un poco, pero es segura)", "accion": _decidir_prueba.bind(i, true)})
+			opciones.append({"texto": "Seguir interrogando ya (rápido, pero algún testigo puede mentir)", "accion": _decidir_prueba.bind(i, false)})
+		if interrogados.size() < 2:
+			for k in (c["sospechosos"] as Array).size():
+				if not interrogados.has(k):
+					opciones.append({"texto": "Interrogar a %s (quedan %d interrogatorios)" % [c["sospechosos"][k]["nombre"], 2 - interrogados.size()], "accion": _interrogar.bind(i, k)})
 		for k in (c["sospechosos"] as Array).size():
 			var sospe: Dictionary = c["sospechosos"][k]
 			opciones.append({"texto": "Acusar a %s y detenerlo" % sospe["nombre"], "accion": _acusar.bind(i, k), "activo": not bool(c["en_curso"]) and not en_menu})
@@ -1726,7 +1809,69 @@ func _paso_caso_hecho(inc) -> void:
 	hud.notificar("%s · PISTA: %s" % [c["id"], pista], Color("c39bd3"))
 	if int(c["hechos"]) >= pasos.size():
 		hud.notificar("%s: ya tienes todas las pistas. Ve a la comisaría y acusa al culpable." % c["id"], Color("ffd700"))
+	elif randf() < 0.6 and not c.get("decision", false):
+		# Los detectives encuentran una prueba y piden opinión
+		c["decision"] = true
+		c["prueba"] = ["una colilla y un guante", "un mechero con huellas", "un tique de compra", "restos de pintura de un coche", "un pelo en la ventana"][randi() % 5]
+		hud.notificar("%s · Los detectives: «Hemos encontrado %s. ¿Al laboratorio o seguimos interrogando?» (comisaría)" % [c["id"], c["prueba"]], Color("c39bd3"))
 	_guardar_partida()
+
+
+func _inocente_al_azar(c: Dictionary, excluir: Array = []) -> int:
+	var lista := []
+	for k in (c["sospechosos"] as Array).size():
+		if k != int(c["culpable"]) and not excluir.has(k):
+			lista.append(k)
+	return -1 if lista.is_empty() else int(lista[randi() % lista.size()])
+
+
+func _decidir_prueba(i: int, laboratorio: bool) -> void:
+	var c: Dictionary = _casos()[i]
+	c["decision"] = false
+	if laboratorio:
+		hud.notificar("%s: la prueba va al laboratorio. Los resultados llegarán en un rato." % c["id"], Color("c39bd3"))
+		_programar(60.0, _resultado_laboratorio.bind(String(c["id"])))
+	else:
+		var k := _inocente_al_azar(c)
+		if randf() < 0.65 and k >= 0:
+			(c["pistas"] as Array).append("Interrogatorio: %s tiene coartada; queda descartado." % c["sospechosos"][k]["nombre"])
+		else:
+			# Un testigo miente y señala a un inocente
+			var falso := _inocente_al_azar(c)
+			if falso >= 0:
+				(c["pistas"] as Array).append("(Testimonio dudoso) Un testigo asegura que fue %s." % c["sospechosos"][falso]["nombre"])
+	_guardar_partida()
+	_mostrar_caso(i)
+
+
+func _resultado_laboratorio(id: String) -> void:
+	var i := _indice_caso(id)
+	if i < 0:
+		return
+	var c: Dictionary = _casos()[i]
+	var k := _inocente_al_azar(c)
+	if k >= 0:
+		(c["pistas"] as Array).append("Laboratorio: las huellas descartan a %s." % c["sospechosos"][k]["nombre"])
+		hud.notificar("%s · Laboratorio: las huellas descartan a %s." % [id, c["sospechosos"][k]["nombre"]], Color("c39bd3"))
+	_guardar_partida()
+
+
+func _interrogar(i: int, k: int) -> void:
+	var c: Dictionary = _casos()[i]
+	var interrogados: Array = c.get("interrogados", [])
+	c["interrogados"] = interrogados
+	interrogados.append(k)
+	var nombre: String = c["sospechosos"][k]["nombre"]
+	var culpable: bool = k == int(c["culpable"])
+	var respuesta := ""
+	if culpable:
+		respuesta = "%s se pone muy nervioso, se contradice con la hora y pide un abogado." % nombre if randf() < 0.8 else "%s responde tranquilo a todo. Demasiado tranquilo." % nombre
+	else:
+		respuesta = "%s tiene una coartada que confirman dos personas." % nombre if randf() < 0.7 else "%s está nervioso y no recuerda bien dónde estaba." % nombre
+	(c["pistas"] as Array).append("Interrogatorio: " + respuesta)
+	_guardar_partida()
+	hud.mostrar_panel("INTERROGATORIO", "Sala de interrogatorios de la comisaría.\n\nDetective: ¿Dónde estaba usted la noche de los hechos?\n\n%s" % respuesta,
+		[{"texto": "Volver al caso", "accion": _mostrar_caso.bind(i)}], true)
 
 
 func _acusar(i: int, k: int) -> void:
@@ -1762,6 +1907,7 @@ func _acusar(i: int, k: int) -> void:
 
 func _cerrar_caso_detencion(c: Dictionary, inc) -> void:
 	c["estado"] = "resuelto"
+	stats["casos_resueltos"] = int(stats.get("casos_resueltos", 0)) + 1
 	var banda: bool = c.get("banda", false)
 	var premio := 3000 if banda else 1500
 	_cambiar_dinero(premio)
@@ -1812,25 +1958,28 @@ func _estado_arco(id: String) -> Dictionary:
 
 func _etapa_actual(id: String) -> Dictionary:
 	var e := _estado_arco(id)
-	var etapas: Array = Pueblo.ARCOS[id]["etapas"]
+	var etapas: Array = _arcos()[id]["etapas"]
 	if bool(e["cerrado"]) or int(e["etapa"]) >= etapas.size():
 		return {}
 	return etapas[int(e["etapa"])]
 
 
 func _programar_arcos() -> void:
-	for id in Pueblo.ARCOS:
-		var arco: Dictionary = Pueblo.ARCOS[id]
+	for id in _arcos():
+		var arco: Dictionary = _arcos()[id]
 		var e := _estado_arco(id)
 		if bool(e["cerrado"]) or int(partida["dia"]) < int(arco["dia_min"]) or int(e["dia_ult"]) >= int(partida["dia"]):
 			continue
 		var etapa := _etapa_actual(id)
 		if etapa.is_empty():
 			continue
-		if etapa["turno"] != "ambos" and etapa["turno"] != turno:
-			hud.notificar("%s: la próxima pista llegará en un turno de %s." % [arco["nombre"], "NOCHE" if etapa["turno"] == "noche" else "DÍA"], Color("ffd166"))
-			continue
-		hud.notificar("Investigación en marcha: %s. Hoy puede haber novedades." % arco["nombre"], Color("ffd700"))
+		# 2.0: las pistas llegan en cualquier turno; los detectives orientan
+		var pista_turno := ""
+		if etapa["turno"] == "noche":
+			pista_turno = " Los detectives creen que el autor actúa sobre todo de noche."
+		elif etapa["turno"] == "dia":
+			pista_turno = " Los detectives creen que se mueve a plena luz del día."
+		hud.notificar("Investigación en marcha: %s. Hoy puede haber novedades.%s" % [arco["nombre"], pista_turno if _flota_tiene("judicial") else ""], Color("ffd700"))
 		if etapa["tipo"] == "denuncia":
 			etapas_programadas.append(id)
 			_programar(randf_range(60.0, 150.0), _llega_denuncia)
@@ -1846,13 +1995,13 @@ func _lanzar_etapa(id: String) -> void:
 		return
 	var lugar := _lugar_de_etapa(String(etapa.get("lugar", "")))
 	var nodo := int(lugar.get("nodo", red.nodo_mas_cercano(tamano_mapa / 2.0)))
-	var inc = _nuevo_aviso(etapa["def"], nodo, String(lugar.get("nombre", "")), "Investigación: %s" % Pueblo.ARCOS[id]["nombre"])
+	var inc = _nuevo_aviso(etapa["def"], nodo, String(lugar.get("nombre", "")), "Investigación: %s" % _arcos()[id]["nombre"])
 	inc.arco = id
 	inc.etapa_arco = int(_estado_arco(id)["etapa"])
 	if etapa["tipo"] == "gran":
 		hud.notificar("¡%s! Es la gran operación de la investigación. Prepara a tus mejores unidades." % etapa["def"]["titulo"], Color("ffd700"))
 	else:
-		hud.notificar("INVESTIGACIÓN · %s: %s (%s)" % [Pueblo.ARCOS[id]["nombre"], etapa["def"]["titulo"], inc.id_incidente], Color("ffd700"))
+		hud.notificar("INVESTIGACIÓN · %s: %s (%s)" % [_arcos()[id]["nombre"], etapa["def"]["titulo"], inc.id_incidente], Color("ffd700"))
 	_sonido("alerta")
 	_vibrar(0.7, 0.7, 0.8)
 	_viaje_camara(inc.position)
@@ -1871,36 +2020,149 @@ func _avanzar_arco(id: String, etapa_hecha: int) -> void:
 	var e := _estado_arco(id)
 	if int(e["etapa"]) != etapa_hecha or bool(e["cerrado"]):
 		return
-	var etapa: Dictionary = Pueblo.ARCOS[id]["etapas"][etapa_hecha]
+	var etapa: Dictionary = _arcos()[id]["etapas"][etapa_hecha]
 	e["etapa"] = etapa_hecha + 1
 	e["dia_ult"] = int(partida["dia"])
 	if etapa.has("titular"):
 		stats["titular_especial"] = etapa["titular"]
 	if etapa.get("final", false):
 		e["cerrado"] = true
+		_programar_juicio(String(_arcos()[id]["nombre"]), String(etapa.get("acusado", "los detenidos")))
+		_crear_arco_dinamico()
 		var premio := int(etapa.get("recompensa", 0))
 		_cambiar_dinero(premio)
 		_sumar_reputacion(float(etapa.get("reputacion", 0)))
 		_dar_logro(String(etapa.get("logro", "")))
-		hud.notificar("¡%s RESUELTA! Recompensa: +%s y mucha reputación." % [Pueblo.ARCOS[id]["nombre"].to_upper(), Hud.formato_euros(premio)], Color("ffd700"))
+		hud.notificar("¡%s RESUELTA! Recompensa: +%s y mucha reputación." % [_arcos()[id]["nombre"].to_upper(), Hud.formato_euros(premio)], Color("ffd700"))
 	elif etapa.has("avance"):
 		hud.notificar(etapa["avance"], Color("ffd166"))
 	_sonido("envio")
 	_guardar_partida()
 
 
+## Todas las investigaciones: las dos fijas y las que se van creando (2.0).
+func _arcos() -> Dictionary:
+	var todos: Dictionary = Pueblo.ARCOS.duplicate()
+	var din: Dictionary = partida.get("arcos_din", {})
+	for k in din:
+		todos[k] = din[k]
+	return todos
+
+
+## Plantillas de nuevas historias principales. {zona} y {lugarN} se rellenan
+## con sitios del mapa, así cada vez pasan en un lugar distinto.
+const PLANTILLAS_ARCO := [
+	{"nombre": "Red de narcotráfico en {zona}", "etapas": [
+		{"tipo": "aviso", "turno": "noche", "lugar": "bar", "def": {"titulo": "Trapicheo de droga junto a {lugar}", "servicios": ["policia"], "principal": "policia", "urgencia": 160.0, "intervencion": 10.0, "categoria": "control", "resultado_bien": "Un camello identificado: trabaja para alguien de {zona}."}, "avance": "{nombre}: primer camello identificado (pista 1 de 3)."},
+		{"tipo": "denuncia", "turno": "dia", "quien": "Madre de un adolescente", "texto": "A mi hijo le venden droga a la salida del instituto, siempre un chico en una moto negra que viene de {zona}.", "avance": "{nombre}: la moto negra lleva a un piso (pista 2 de 3)."},
+		{"tipo": "aviso", "turno": "noche", "lugar": "edificio", "def": {"titulo": "Mucho trasiego de gente en un piso de {lugar}", "servicios": ["policia"], "principal": "policia", "urgencia": 140.0, "intervencion": 12.0, "categoria": "control", "resultado_bien": "Vigilancia del piso: el juzgado autoriza la entrada."}, "avance": "{nombre}: el juzgado autoriza la redada (pista 3 de 3)."},
+		{"tipo": "gran", "turno": "noche", "lugar": "edificio", "final": true, "acusado": "el cabecilla de la red", "def": {"titulo": "REDADA: {nombre}", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 3}, "urgencia": 400.0, "intervencion": 24.0, "categoria": "robo", "info": ["Orden de entrada y registro", "Recomendado: GEO o Guardia Civil"], "resultado_bien": "Red desarticulada: cinco detenidos y droga incautada.", "resultado_mal": "Los cabecillas han escapado por la azotea."}, "titular": "Cae la red de narcotráfico de {zona}", "recompensa": 7000, "reputacion": 10},
+	]},
+	{"nombre": "El pirómano de {zona}", "etapas": [
+		{"tipo": "aviso", "turno": "noche", "lugar": "plaza", "def": {"titulo": "Contenedores ardiendo junto a {lugar}", "servicios": ["bomberos"], "principal": "bomberos", "urgencia": 120.0, "intervencion": 9.0, "categoria": "fuego", "resultado_bien": "Huele a gasolina: el fuego ha sido provocado."}, "avance": "{nombre}: el fuego fue provocado (pista 1 de 3)."},
+		{"tipo": "aviso", "turno": "noche", "lugar": "parque", "def": {"titulo": "Otro incendio provocado cerca de {lugar}", "servicios": ["bomberos", "policia"], "principal": "bomberos", "urgencia": 110.0, "intervencion": 11.0, "categoria": "fuego", "intensidad": 2, "resultado_bien": "Un testigo vio huir a alguien con una garrafa."}, "avance": "{nombre}: un testigo vio a alguien con una garrafa (pista 2 de 3)."},
+		{"tipo": "denuncia", "turno": "dia", "quien": "Dependiente de una gasolinera", "texto": "Un chico viene casi cada noche a llenar una garrafa de gasolina, sin coche. Siempre con una sudadera con capucha gris.", "avance": "{nombre}: la gasolinera ha grabado al sospechoso (pista 3 de 3)."},
+		{"tipo": "aviso", "turno": "noche", "lugar": "plaza", "final": true, "acusado": "el pirómano", "def": {"titulo": "Pillado con una garrafa junto a {lugar}: el pirómano", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 2}, "urgencia": 90.0, "intervencion": 10.0, "categoria": "pelea", "resultado_bien": "Detenido el pirómano de {zona}.", "resultado_mal": "Se ha escapado corriendo por los descampados."}, "titular": "Detenido el pirómano que tenía en vilo a {zona}", "recompensa": 6000, "reputacion": 10},
+	]},
+	{"nombre": "La banda de los atracos", "etapas": [
+		{"tipo": "aviso", "turno": "dia", "lugar": "supermercado", "def": {"titulo": "Atraco con arma blanca en {lugar}", "servicios": ["policia"], "principal": "policia", "urgencia": 70.0, "intervencion": 12.0, "categoria": "robo", "resultado_bien": "Las cámaras muestran a dos encapuchados y un coche gris."}, "avance": "{nombre}: dos encapuchados y un coche gris (pista 1 de 3)."},
+		{"tipo": "aviso", "turno": "noche", "lugar": "gasolinera", "def": {"titulo": "Atraco en {lugar}", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 2}, "urgencia": 70.0, "intervencion": 12.0, "categoria": "robo", "resultado_bien": "Mismo coche gris: es la misma banda."}, "avance": "{nombre}: es la misma banda (pista 2 de 3)."},
+		{"tipo": "denuncia", "turno": "dia", "quien": "Vecino de una nave", "texto": "Hay un coche gris escondido bajo una lona en la nave de al lado. Entran y salen siempre de noche.", "avance": "{nombre}: localizado su escondite (pista 3 de 3)."},
+		{"tipo": "gran", "turno": "noche", "lugar": "industrial", "final": true, "acusado": "los atracadores", "def": {"titulo": "OPERACIÓN: {nombre}", "servicios": ["policia"], "principal": "policia", "requeridas": {"policia": 3}, "urgencia": 400.0, "intervencion": 24.0, "categoria": "robo", "info": ["Pueden ir armados", "Recomendado: GEO"], "resultado_bien": "Banda detenida en su escondite. Recuperado el botín.", "resultado_mal": "La banda se ha escapado antes de la operación."}, "titular": "Detenida la banda de los atracos de Miguelturra", "recompensa": 8000, "reputacion": 12},
+	]},
+	{"nombre": "El falso revisor del gas", "etapas": [
+		{"tipo": "denuncia", "turno": "dia", "quien": "Mujer de 81 años", "texto": "Vino un señor diciendo que era del gas, me revisó la cocina y me cobró 300 euros. Luego me han dicho que no era de ninguna empresa.", "avance": "{nombre}: primera estafa denunciada (pista 1 de 3)."},
+		{"tipo": "denuncia", "turno": "dia", "quien": "Hijo de una vecina mayor", "texto": "A mi madre le ha pasado lo mismo: un hombre con chaleco azul y una furgoneta blanca. Se llevó dinero y unas joyas.", "avance": "{nombre}: una furgoneta blanca y un chaleco azul (pista 2 de 3)."},
+		{"tipo": "aviso", "turno": "dia", "lugar": "edificio", "def": {"titulo": "Vecinos avisan: un falso revisor llamando a las puertas en {lugar}", "servicios": ["policia"], "principal": "policia", "urgencia": 90.0, "intervencion": 10.0, "categoria": "control", "resultado_bien": "Identificado el estafador y su furgoneta."}, "avance": "{nombre}: identificado (pista 3 de 3)."},
+		{"tipo": "aviso", "turno": "dia", "lugar": "plaza", "final": true, "acusado": "el falso revisor", "def": {"titulo": "Detención del falso revisor del gas en {lugar}", "servicios": ["policia"], "principal": "policia", "urgencia": 120.0, "intervencion": 10.0, "categoria": "control", "resultado_bien": "Detenido: había estafado a más de veinte mayores.", "resultado_mal": "Se ha dado a la fuga en su furgoneta."}, "titular": "Detenido el falso revisor que estafaba a los mayores", "recompensa": 5000, "reputacion": 12},
+	]},
+]
+
+
+## Crea una historia principal nueva en otro sitio cuando acaba una (2.0).
+func _crear_arco_dinamico() -> void:
+	var din: Dictionary = partida.get("arcos_din", {})
+	partida["arcos_din"] = din
+	partida["contador_arcos"] = int(partida.get("contador_arcos", 0)) + 1
+	var plantilla: Dictionary = PLANTILLAS_ARCO[randi() % PLANTILLAS_ARCO.size()]
+	var zona_l := _elegir_lugar(["plaza", "parque", "iglesia", "bar"])
+	var zona := "los alrededores de %s" % String(zona_l.get("nombre", "la plaza"))
+	if randf() < 0.25:
+		zona = "Los Pozuelos"
+	var nombre := String(plantilla["nombre"]).format({"zona": zona})
+	var etapas := []
+	for et in plantilla["etapas"]:
+		var e: Dictionary = (et as Dictionary).duplicate(true)
+		var l := _lugar_de_etapa(String(e.get("lugar", "")))
+		var vars := {"zona": zona, "nombre": nombre, "lugar": String(l.get("nombre", "el centro"))}
+		if l.has("nombre") and e.has("lugar"):
+			e["lugar"] = String(l["nombre"])   # siempre el mismo sitio que dice el aviso
+		if e.has("def"):
+			var d: Dictionary = e["def"]
+			for k in ["titulo", "resultado_bien", "resultado_mal"]:
+				if d.has(k):
+					d[k] = String(d[k]).format(vars)
+		for k in ["avance", "titular", "texto"]:
+			if e.has(k):
+				e[k] = String(e[k]).format(vars)
+		etapas.append(e)
+	var id := "din_%d" % int(partida["contador_arcos"])
+	din[id] = {"nombre": nombre, "dia_min": int(partida["dia"]) + 1, "etapas": etapas}
+	hud.notificar("Nueva investigación abierta: %s." % nombre, Color("ffd700"))
+
+
+## Siempre tiene que haber alguna historia principal en marcha.
+func _asegurar_historia_principal() -> void:
+	if int(partida["dia"]) < 2:
+		return
+	for id in _arcos():
+		if not bool(_estado_arco(id)["cerrado"]):
+			return
+	_crear_arco_dinamico()
+
+
+# ---------------------------------------------------------------- JUICIOS MEDIÁTICOS
+func _programar_juicio(caso: String, acusado: String) -> void:
+	var juicios: Array = partida.get("juicios", [])
+	partida["juicios"] = juicios
+	var calidad := clampf(float(partida["reputacion"]) / 100.0, 0.2, 0.9)
+	juicios.append({"caso": caso, "acusado": acusado, "dia": int(partida["dia"]) + 2, "calidad": calidad})
+	hud.notificar("%s: el juicio contra %s será dentro de dos días. La prensa ya lo sigue." % [caso, acusado], Color("9fc7e8"))
+
+
+func _celebrar_juicios() -> void:
+	var juicios: Array = partida.get("juicios", [])
+	var quedan := []
+	for j in juicios:
+		if int(j["dia"]) > int(partida["dia"]):
+			quedan.append(j)
+			continue
+		var prob := 0.35 + float(j["calidad"]) * 0.6
+		if randf() < prob:
+			stats["titular_especial"] = "JUICIO: condenados %s del caso «%s»" % [j["acusado"], j["caso"]]
+			hud.notificar("JUICIO · %s: ¡condenados! Las pruebas de la central fueron decisivas." % j["caso"], Color("ffd700"))
+			_sumar_reputacion(4.0)
+			stats["ayudas"] = int(stats.get("ayudas", 0)) + 3000
+			(stats["ayudas_texto"] as Array).append("Condena en el juicio de «%s»: +3.000 €" % j["caso"])
+		else:
+			stats["titular_especial"] = "JUICIO: absueltos %s del caso «%s» por falta de pruebas" % [j["acusado"], j["caso"]]
+			hud.notificar("JUICIO · %s: absueltos por falta de pruebas. Podrían volver a actuar." % j["caso"], Color("ff8a65"))
+			_sumar_reputacion(-3.0)
+	partida["juicios"] = quedan
+
+
 func _texto_investigaciones(corto: bool) -> String:
 	var lineas := []
-	for id in Pueblo.ARCOS:
-		if int(partida["dia"]) < int(Pueblo.ARCOS[id]["dia_min"]) and not partida["arcos"].has(id):
+	for id in _arcos():
+		if int(partida["dia"]) < int(_arcos()[id]["dia_min"]) and not partida["arcos"].has(id):
 			continue
 		var e := _estado_arco(id)
-		var total: int = Pueblo.ARCOS[id]["etapas"].size()
+		var total: int = _arcos()[id]["etapas"].size()
 		if bool(e["cerrado"]):
 			if not corto:
-				lineas.append("· %s: RESUELTA" % Pueblo.ARCOS[id]["nombre"])
+				lineas.append("· %s: RESUELTA" % _arcos()[id]["nombre"])
 		else:
-			var linea := "· %s: %d de %d pasos" % [Pueblo.ARCOS[id]["nombre"], int(e["etapa"]), total]
+			var linea := "· %s: %d de %d pasos" % [_arcos()[id]["nombre"], int(e["etapa"]), total]
 			var sig := _etapa_actual(id)
 			if not sig.is_empty():
 				if int(e["dia_ult"]) >= int(partida["dia"]):
@@ -1927,7 +2189,25 @@ func _pedir_externo(tipo: String, inc) -> void:
 	externos_usados[tipo] = int(externos_usados.get(tipo, 0)) + 1
 	contador_externos += 1
 	var v = Vehiculo.new()
-	if tipo == "guardia_civil":
+	if tipo == "convenio":
+		var pueblo: String = ["Almagro", "Bolaños", "Pozuelo de Calatrava", "Carrión", "Torralba", "Valenzuela"][randi() % 6]
+		_cambiar_dinero(-600)
+		if inc.servicios.has("ambulancia") and (not inc.servicios.has("policia") or inc.faltan_de("ambulancia") > 0 or randf() < 0.5):
+			v.configurar("Amb. %s" % pueblo, "ambulancia", Color("e8e8e8"), "A", 58.0, red)
+			v.nombre_tipo = "Ambulancia de %s (convenio)" % pueblo
+			v.personal = 2
+			v.equipo = []
+			v.camillas = 1
+			v.bono = ""
+			v.tipo = "ambulancia_b"
+		else:
+			v.configurar("Policía %s" % pueblo, "policia", Color("3b6fd1"), "P", 60.0, red)
+			v.nombre_tipo = "Policía Local de %s (convenio)" % pueblo
+			v.personal = 2
+			v.equipo = ["chaleco", "alcoholimetro"]
+			v.bono = ""
+			v.tipo = "patrulla"
+	elif tipo == "guardia_civil":
 		v.configurar("Guardia Civil %d" % contador_externos, "policia", Color("2e7d4f"), "G", 62.0, red)
 		v.nombre_tipo = "Guardia Civil"
 		v.personal = 2
@@ -1939,7 +2219,8 @@ func _pedir_externo(tipo: String, inc) -> void:
 		v.personal = 6
 		v.equipo = ["extincion", "tecnico", "busqueda"]
 		v.bono = "rescate"
-	v.tipo = tipo
+	if tipo != "convenio":
+		v.tipo = tipo
 	v.externo = true
 	v.heridos = []
 	v.indice_flota = -1
@@ -1949,9 +2230,164 @@ func _pedir_externo(tipo: String, inc) -> void:
 	v.interceptado.connect(_on_interceptado)
 	mundo.add_child(v)
 	vehiculos.append(v)
-	var quien := "La Guardia Civil manda una patrulla desde fuera del pueblo" if tipo == "guardia_civil" else "El Consorcio Provincial manda una dotación de refuerzo: tardará, pero llega con mucho personal y equipo"
+	var quien: String = "%s viene a echar una mano por el convenio entre pueblos" % v.nombre_tipo
+	if tipo != "convenio":
+		quien = "La Guardia Civil manda una patrulla desde fuera del pueblo" if tipo == "guardia_civil" else "El Consorcio Provincial manda una dotación de refuerzo: tardará, pero llega con mucho personal y equipo"
 	hud.notificar("%s (%s) para %s." % [quien, v.id_unidad, inc.id_incidente], Color("8fd3a0"))
 	_enviar_unidad(v, inc)
+
+
+# ================================================================ PUEBLO VIVO (2.0)
+
+const VECINOS := [
+	["Doña Paca, la del 3.º", "Hija, soy la Paca otra vez, que ya me conocéis... "],
+	["Don Julián, el del bar", "Soy Julián, el del bar de la plaza, ¡otra vez yo! "],
+	["Remedios, la vecina del parque", "Buenas, soy Remedios, la del parque, que siempre os llamo... "],
+	["Tomás, el agricultor", "Tomás al aparato, el de la finca de la carretera. "],
+	["Mari Carmen, la de la panadería", "Soy Mari Carmen, la de la panadería, que estoy de los nervios. "],
+	["Paco, el taxista", "Paco el taxista, que siempre me toca ver de todo. "],
+]
+
+const CHARLAS := {
+	"policia": ["Central, todo tranquilo por la zona del parque.", "Paramos un momento a echar gasolina, seguimos disponibles.",
+		"Unos chavales con petardos en la plaza. Les hemos llamado la atención.", "Control rutinario en la entrada del pueblo, sin novedad.",
+		"Central, ¿alguien sabe si sigue abierto el bar de la estación? Es por el café.", "Hay un coche mal aparcado en un vado. Avisamos a la grúa."],
+	"ambulancia": ["Central, reponiendo gasas y oxígeno. Seguimos operativos.", "Disponibles en base. El técnico ha hecho café, por si alguien se apunta.",
+		"Revisado el desfibrilador, todo correcto.", "Central, cambio de turno de conductor en la unidad. Seguimos operativos."],
+	"bomberos": ["Central, terminada la revisión de mangueras. Todo listo.", "Prácticas de excarcelación en el parque. Seguimos disponibles.",
+		"Bomba de agua revisada. Depósito lleno.", "Central, un gato en un árbol en la calle de abajo... lo dejamos para luego."],
+}
+
+
+func _es_catastrofe(id: String) -> bool:
+	for h in HistoriasCrisis.HISTORIAS:
+		if String(h["id"]) == id:
+			return true
+	return false
+
+
+## Algunos vecinos llaman una y otra vez: se les reconoce.
+func _vecino_habitual() -> String:
+	var v: Array = VECINOS[randi() % VECINOS.size()]
+	var cuenta: Dictionary = partida.get("vecinos", {})
+	var n := int(cuenta.get(v[0], 0)) + 1
+	cuenta[v[0]] = n
+	partida["vecinos"] = cuenta
+	llamada_perfil = "%s (%d.ª vez que llama)" % [v[0], n]
+	if n == 5:
+		hud.notificar("%s ya es todo un clásico de la central." % v[0], Color("ffd166"))
+	return String(v[1])
+
+
+## Un testigo vuelve a llamar por la misma emergencia con algún dato nuevo.
+func _llamada_en_cadena(inc) -> void:
+	if not is_instance_valid(inc) or not inc.activo() or turno_terminando:
+		return
+	var datos := {
+		"medico": ["Parece que respira peor que antes", "Se ha despertado y pregunta qué ha pasado", "Ha llegado un familiar, está muy nervioso"],
+		"fuego": ["El humo ya sale por otra ventana", "Los vecinos están bajando a la calle", "Se oyen pequeñas explosiones dentro"],
+		"pelea": ["Ahora son más, han llegado amigos de uno", "Uno se ha ido corriendo hacia el parque", "Hay uno sangrando por la cabeza"],
+		"robo": ["Lo he visto irse en una moto oscura", "Llevaba una sudadera gris con capucha", "Se ha metido por un callejón"],
+		"atrapado": ["Ya no se oye a la persona de dentro", "Huele a gasolina", "Han parado varios coches a mirar"],
+	}
+	var lista: Array = datos.get(String(inc.categoria), ["La gente se está arremolinando", "Sigue todo igual que antes", "Ha llegado más gente a mirar"])
+	var dato: String = lista[randi() % lista.size()]
+	var quien: String = ["Vecino del bloque de enfrente", "Mujer que pasaba por allí", "Conductor que se ha parado", "Chaval de unos 17 años"][randi() % 4]
+	var d := {"id": "cadena", "turno": "ambos", "llamante": quien, "calma": 45, "inicio": "inicio", "nodos": {
+		"inicio": {"textos": ["Llamo por lo de %s... ¿ya saben que ha pasado?" % String(inc.titulo).to_lower(), "Oiga, es por %s. ¿Viene alguien ya?" % String(inc.titulo).to_lower()],
+			"opciones": [
+				{"texto": "Sí, ya tenemos el aviso y la ayuda va de camino. ¿Ve algo nuevo?", "efectos": {"calma": 10}, "ir_a": "dato"},
+				{"texto": "Ya está avisado. Por favor, deje la línea libre.", "efectos": {"calma": -5}, "ir_a": "fin"}]},
+		"dato": {"texto": "Pues mire... %s." % dato.to_lower(), "efectos": {"info": dato},
+			"opciones": [
+				{"texto": "Gracias, se lo paso a las unidades. Manténgase a distancia.", "efectos": {"calma": 10}, "ir_a": "fin_bien"}]},
+		"fin": {"texto": "Vale, vale, perdone.", "fin": true},
+		"fin_bien": {"texto": "De acuerdo, me quedo apartado.", "fin": true}}}
+	cola_relacionadas.append([inc, d])
+	_sonar_llamada(true)
+
+
+## Charla por la emisora de vez en cuando, para que el pueblo suene vivo.
+func _charla_radio() -> void:
+	if turno_terminando:
+		return
+	_programar(randf_range(70.0, 130.0), _charla_radio)
+	if en_menu:
+		return
+	var libres := []
+	for v in vehiculos:
+		if not v.externo and CHARLAS.has(v.servicio) and (v.estado == "Disponible" or v.estado == "Patrullando"):
+			libres.append(v)
+	if libres.is_empty():
+		return
+	var v = libres[randi() % libres.size()]
+	var frases: Array = CHARLAS[v.servicio]
+	_radio(v, String(frases[randi() % frases.size()]))
+
+
+## Averías: de vez en cuando un vehículo en base no arranca.
+func _quizas_averia() -> void:
+	if en_menu or turno_terminando or randf() > 0.0015:
+		return
+	var candidatos := []
+	for v in vehiculos:
+		if not v.externo and not v.aereo and v.estado == "Disponible":
+			candidatos.append(v)
+	if candidatos.is_empty():
+		return
+	var v = candidatos[randi() % candidatos.size()]
+	v.estado = "Averiada"
+	var dura := 60.0 if _tiene_mejora("taller") else 140.0
+	_cambiar_dinero(-300)
+	_radio(v, "Central, la unidad no arranca. Avería. Esperamos al mecánico.")
+	hud.notificar("%s está averiada: fuera de servicio un rato (-300 € de reparación%s)." % [v.id_unidad, ", con el taller propio va más rápido" if _tiene_mejora("taller") else ""], Color("e67e22"))
+	_programar(dura, _fin_averia.bind(v))
+
+
+func _fin_averia(v) -> void:
+	if is_instance_valid(v) and v.estado == "Averiada":
+		v.estado = "Disponible"
+		_radio(v, "Reparada. Volvemos a estar operativos.")
+
+
+## Si dejas el pueblo sin policía o sin ambulancias mucho rato, hay quejas.
+func _vigilar_pueblo_vacio() -> void:
+	if en_menu or turno_terminando:
+		return
+	for sv in ["policia", "ambulancia"]:
+		var hay := 0
+		var libres := 0
+		for v in vehiculos:
+			if v.externo or v.servicio != sv:
+				continue
+			hay += 1
+			if v.disponible():
+				libres += 1
+		if hay == 0 or libres > 0:
+			_t_vacio[sv] = 0.0
+			continue
+		_t_vacio[sv] = float(_t_vacio[sv]) + 1.0
+		if float(_t_vacio[sv]) >= 150.0 and not _queja_vacio.has(sv):
+			_queja_vacio[sv] = true
+			stats["quejas"] = int(stats["quejas"]) + 1
+			_sumar_reputacion(-3.0)
+			var que := "sin ni una patrulla de policía" if sv == "policia" else "sin ninguna ambulancia libre"
+			hud.notificar("QUEJA DEL ALCALDE: «Llevamos mucho rato %s. Si pasa algo más, ¿quién va?» (-3 reputación)" % que, Color("e74c3c"))
+			(stats["prensa"] as Array).append("Vecinos denuncian que el pueblo se quedó un buen rato %s." % que)
+
+
+## La prensa aparece en las grandes emergencias y cuenta lo que ve.
+func _prensa(inc, exito: bool) -> void:
+	var medio: String = ["La Tribuna de Ciudad Real", "Lanza Digital", "Radio Miguelturra", "Televisión regional"][randi() % 4]
+	var frase := ""
+	if exito:
+		frase = "%s elogia la rapidez del 112 en «%s»." % [medio, String(inc.titulo).to_lower()]
+		_sumar_reputacion(2.0)
+	else:
+		frase = "%s critica la gestión de «%s»." % [medio, String(inc.titulo).to_lower()]
+		_sumar_reputacion(-2.0)
+	(stats["prensa"] as Array).append(frase)
+	hud.notificar("PRENSA: " + frase, Color("ffd166") if exito else Color("e67e22"))
 
 
 # ================================================================ CADENA: COCHE SOSPECHOSO -> ROBO -> HUIDA (0.95)
@@ -2108,6 +2544,7 @@ func _process(delta: float) -> void:
 	if not hud.ventana_abierta() and not hud.calibrando():
 		_mover_camara(delta)
 	_vigilar_persecucion()
+	_vigilar_cerco(delta)
 	_vigilar_urgencias()
 	_pitidos_localizacion(delta)
 	if not pausa_tactica:
@@ -2136,6 +2573,8 @@ func _process(delta: float) -> void:
 	if _t_trafico <= 0.0:
 		_t_trafico = 1.0
 		_actualizar_trafico()
+		_vigilar_pueblo_vacio()
+		_quizas_averia()
 		_vigilar_denuncias()
 		_radar_camuflado()
 		for v in vehiculos:
@@ -2152,8 +2591,11 @@ func _actualizar_trafico() -> void:
 	var f := 1.0
 	if (h >= 8.0 and h < 9.5) or (h >= 13.5 and h < 15.0) or (h >= 18.0 and h < 20.0):
 		f = 0.8
+		if not _hora_punta and not en_menu:
+			hud.notificar("Hora punta: hay más tráfico y las unidades tardan un poco más.", Color("9fb3c8"))
 	elif h >= 23.0 or h < 6.0:
 		f = 1.15
+	_hora_punta = f < 1.0
 	f *= float(CLIMAS[clima]["velocidad"])
 	for v in vehiculos:
 		v.factor_trafico = f
@@ -2548,6 +2990,8 @@ func _mostrar_unidad(v) -> void:
 	if v.servicio == "policia" and v.estado == "Patrullando":
 		texto += "\nPatrullando su zona"
 	var opciones := []
+	if v.bono == "heli_policia" and v.disponible() and v.fase != "vigilancia_aerea":
+		opciones.append({"texto": "Vigilancia aérea sobre el pueblo (2 minutos, %s): puede descubrir delitos y fuegos" % Hud.formato_euros(Catalogo.COSTE_VUELO), "accion": _vigilancia_aerea.bind(v)})
 	if v.disponible():
 		opciones.append({"texto": "Elegir la emergencia en el mapa (con la mira)", "accion": _empezar_envio_con_mira.bind(v)})
 		# Emergencias activas ordenadas por cercanía
@@ -2742,6 +3186,10 @@ func _mostrar_incidente(inc) -> void:
 		if inc.servicios.has("policia") and usados_gc < 2:
 			opciones.append({"texto": "Pedir apoyo a la Guardia Civil (viene desde fuera del pueblo) · quedan %d" % (2 - usados_gc),
 				"accion": _pedir_externo.bind("guardia_civil", inc)})
+		var usados_cv := int(externos_usados.get("convenio", 0))
+		if usados_cv < 2 and (inc.servicios.has("ambulancia") or inc.servicios.has("policia")):
+			opciones.append({"texto": "Pedir una unidad a un pueblo vecino por convenio (600 €) · quedan %d" % (2 - usados_cv),
+				"accion": _pedir_externo.bind("convenio", inc)})
 		if _gran_emergencia(inc) and int(externos_usados.get("ume", 0)) < 1:
 			opciones.append({"texto": "Pedir refuerzo de bomberos del Consorcio Provincial: tarda, pero es muy potente",
 				"accion": _pedir_externo.bind("ume", inc)})
@@ -2810,6 +3258,10 @@ func _sonar_llamada(solo_relacionadas: bool = false) -> void:
 				puede = false
 		if h.has("rara") and randf() > float(h["rara"]):
 			puede = false
+		if puede and _es_catastrofe(String(h["id"])):
+			# Las catástrofes solo de vez en cuando, nunca días seguidos
+			if int(partida.get("ultima_catastrofe", -9)) >= int(partida["dia"]) - 2 or randf() > 0.25:
+				puede = false
 		if puede and (h["turno"] == turno or h["turno"] == "ambos") and (solo == "" or solo == evento_hoy):
 			historias.append(h)
 	if not historias.is_empty() and randf() < 0.45:
@@ -2882,6 +3334,8 @@ func _elegir_historia(historias: Array) -> Dictionary:
 
 
 func _preparar_historia(h: Dictionary) -> void:
+	if _es_catastrofe(String(h["id"])):
+		partida["ultima_catastrofe"] = int(partida["dia"])
 	llamada_historia = h
 	llamada_datos = h
 	ultima_llamada_id = h["id"]
@@ -2910,11 +3364,18 @@ func _preparar_historia(h: Dictionary) -> void:
 	llamada_vars = {"lugar": llamada_lugar.get("nombre", "la plaza"), "calle": llamada_lugar.get("calle", "una calle del centro"), "nombre": nombre}
 
 
-func _preparar_llamada_relacionada(inc, clave: String) -> void:
+func _preparar_llamada_relacionada(inc, clave) -> void:
 	llamada_rel_inc = inc
-	llamada_historia = inc.historia
-	llamada_desenlace = inc.desenlace
-	var d: Dictionary = inc.historia["llamadas"][clave].duplicate()
+	var d: Dictionary = {}
+	if clave is Dictionary:
+		# Llamada en cadena de un testigo (emergencia normal)
+		llamada_historia = {}
+		llamada_desenlace = ""
+		d = (clave as Dictionary).duplicate(true)
+	else:
+		llamada_historia = inc.historia
+		llamada_desenlace = inc.desenlace
+		d = inc.historia["llamadas"][String(clave)].duplicate()
 	d["relacionada"] = true
 	llamada_datos = d
 	llamada_perfil = d["llamante"]
@@ -2948,6 +3409,8 @@ func _contestar_llamada() -> void:
 	var apertura := ""
 	if llamada_rel_inc == null and randf() < 0.45:
 		apertura = String(Preguntas.APERTURAS[randi() % Preguntas.APERTURAS.size()])
+	if llamada_rel_inc == null and randf() < 0.18:
+		apertura = _vecino_habitual()
 	llamada.iniciar(llamada_datos, llamada_vars, llamada_desenlace, llamada_calma, apertura)
 	var cat := "medico"
 	if llamada_datos.has("incidente"):
@@ -3167,6 +3630,8 @@ func _terminar_llamada() -> void:
 	_quitar_servicios_sin_flota(inc)
 	_mostrar_incidente(inc)
 	_consejo("incidente", "Elige en la lista qué unidad enviar y pulsa X. Fíjate en los colores del hexágono: blanco ambulancia, azul policía, rojo bomberos.")
+	if llamada_historia.is_empty() and randf() < 0.3:
+		_programar(randf_range(25.0, 60.0), _llamada_en_cadena.bind(inc))
 	_programar(2.0, _sonar_llamada.bind(true))
 
 
@@ -3419,6 +3884,10 @@ func _final_historia(inc) -> void:
 			inc.exito = bool(regla["exito_final"])
 		if inc.exito:
 			stats["historias_buenas"] += 1
+			# Ayuda del Ayuntamiento por superar bien una catástrofe o un aviso de alto riesgo
+			if HistoriasCrisis.HISTORIAS.any(func(h): return h["id"] == inc.historia["id"]) and int(regla.get("estrellas", 0)) >= 1:
+				stats["ayudas"] += 8000
+				(stats["ayudas_texto"] as Array).append("%s bien resuelto: +8.000 €" % inc.titulo)
 		return
 
 
@@ -3593,9 +4062,10 @@ func _comenzar_intervencion(v) -> void:
 		inc.marcas.append("geo_avisado")
 		_sumar_reputacion(-0.5)
 		hud.notificar("Los vecinos critican el despliegue: un blindado del GEO para %s parece exagerado." % inc.titulo.to_lower(), Color("ffb347"))
-	if not inc.requeridas.has(v.servicio):
+	var sv: String = _servicio_efectivo(v, inc)
+	if not inc.requeridas.has(sv):
 		if inc.historia != null:
-			_procesar_historia(inc, "llegada", v.servicio)
+			_procesar_historia(inc, "llegada", sv)
 		# Primera respuesta: si aún no ha llegado el servicio principal, se queda
 		# atendiendo (la situación empeora más despacio) hasta que llegue.
 		if int(inc.presentes.get(inc.servicio_necesario, 0)) == 0:
@@ -3609,7 +4079,7 @@ func _comenzar_intervencion(v) -> void:
 		v.fase = "apoyo"
 		if not inc.apoyos.has(v):
 			inc.apoyos.append(v)
-		match v.servicio:
+		match sv:
 			"policia":
 				_radio(v, "En el lugar. Cortamos el tráfico y despejamos el paso para que trabajen más rápido.")
 			"ambulancia":
@@ -3619,16 +4089,16 @@ func _comenzar_intervencion(v) -> void:
 		_consejo("apoyo", "Las unidades de apoyo se quedan hasta el final: la policía organiza el tráfico y todo va más rápido. Al terminar, se van todas.")
 		return
 	inc.en_lugar.append(v)
-	inc.presentes[v.servicio] = int(inc.presentes.get(v.servicio, 0)) + 1
-	if v.servicio == inc.servicio_necesario:
+	inc.presentes[sv] = int(inc.presentes.get(sv, 0)) + 1
+	if sv == inc.servicio_necesario:
 		_liberar_apoyos(inc, v)
-	if v.servicio == inc.servicio_necesario and inc.tiempo_llegada < 0.0:
+	if sv == inc.servicio_necesario and inc.tiempo_llegada < 0.0:
 		inc.tiempo_llegada = tiempo_juego
 	_consejo("lugar", "Ya hay unidades en el lugar: abre la emergencia (Triángulo o con la mira) y a la izquierda verás lo que está pasando. Más personal y mejor equipo hacen que vaya más rápido.")
 	# Historia: al llegar puede descubrirse algo o pedirse una decisión
 	if inc.historia != null:
 		inc.registrar(_hora(segundos_sim), "%s llega al lugar" % v.id_unidad)
-		if _procesar_historia(inc, "llegada", v.servicio):
+		if _procesar_historia(inc, "llegada", sv):
 			if inc.evento == "":
 				inc.evento = "decision"
 			return
@@ -3637,7 +4107,7 @@ func _comenzar_intervencion(v) -> void:
 			return
 	match inc.evento:
 		"":
-			if v.servicio == inc.servicio_necesario:
+			if sv == inc.servicio_necesario:
 				_iniciar_evento(inc, v)
 			else:
 				_radio(v, "En el lugar. Esperamos al resto de unidades.")
@@ -3648,14 +4118,14 @@ func _comenzar_intervencion(v) -> void:
 			else:
 				_radio(v, "Llegamos de refuerzo. Todavía falta: %s." % inc.texto_requeridas())
 		_:
-			if v.servicio == "ambulancia" and inc.t_ambulancia >= 0.0:
+			if sv == "ambulancia" and inc.t_ambulancia >= 0.0:
 				_radio(v, "Ambulancia en el lugar. Nos hacemos cargo del herido.")
-			elif v.servicio == "ambulancia" and not NO_TRASLADAN.has(v.bono) and _vir_en(inc) != null:
+			elif sv == "ambulancia" and not NO_TRASLADAN.has(v.bono) and _vir_en(inc) != null:
 				var vir = _vir_en(inc)
 				_radio(v, "Ambulancia de traslado en el lugar. Nos hacemos cargo del paciente.")
 				_radio(vir, "Ha llegado la ambulancia. Seguimos apoyando; si nos necesitas en otro aviso, mándanos (Cuadrado en la unidad).")
 				_consejo("vir_libre", "Cuando llega la ambulancia de traslado, el VIR o la moto sanitaria quedan de apoyo: puedes sacarlos y mandarlos a otro aviso desde la unidad o desde la otra emergencia.")
-			elif inc.refuerzos_avisados.has(v.servicio):
+			elif inc.refuerzos_avisados.has(sv):
 				_radio(v, "¡Refuerzos en el lugar! Ahora irá más rápido.")
 			else:
 				_radio(v, "Nos unimos a la intervención.")
@@ -3858,14 +4328,14 @@ func _vigilar_ambulancias(delta: float) -> void:
 func _ritmo(inc) -> float:
 	var personas := 0
 	for v in inc.en_lugar:
-		if is_instance_valid(v) and v.servicio == inc.servicio_necesario:
+		if is_instance_valid(v) and _servicio_efectivo(v, inc) == inc.servicio_necesario:
 			personas += v.efectivos()
 	var r := clampf(0.6 + personas * 0.15, 0.6, 1.6)
 	var cansancio := 0.0
 	var n := 0
 	var formacion := 0
 	for v in inc.en_lugar:
-		if is_instance_valid(v) and v.servicio == inc.servicio_necesario:
+		if is_instance_valid(v) and _servicio_efectivo(v, inc) == inc.servicio_necesario:
 			cansancio += v.cansancio
 			n += 1
 			formacion = maxi(formacion, v.formacion)
@@ -3957,7 +4427,23 @@ func _ritmo(inc) -> float:
 	if _equipo_en_escena(inc, "dron") and inc.categoria == "busqueda":
 		r *= 1.3
 	if _bono_en_escena(inc, "heli_policia"):
-		r *= 2.2 if inc.categoria == "busqueda" else 1.25
+		if inc.categoria == "busqueda":
+			r *= 2.2 * (1.3 if turno == "noche" else 1.0)
+		elif inc.marcas.has("armado") or inc.historia != null:
+			r *= 1.4
+		else:
+			r *= 1.25
+	if _bono_en_escena(inc, "heli_bomberos"):
+		var t_inc := String(inc.titulo).to_lower()
+		var campo := t_inc.contains("campo") or t_inc.contains("forestal") or t_inc.contains("monte") or t_inc.contains("cereal") or t_inc.contains("finca")
+		if inc.categoria == "fuego":
+			r *= 2.2 if campo else 1.2
+		elif inc.marcas.has("inundacion") or t_inc.contains("embalse") or t_inc.contains("tejado") or t_inc.contains("monte"):
+			r *= 1.8
+	for v in inc.unidades_en_escena():
+		if v.mejoras_amb.has("tecnico") and inc.categoria == "medico":
+			r *= 1.1
+			break
 	if _bono_en_escena(inc, "detectives") and inc.caso_id != "":
 		r *= 1.0 + (0.2 if _equipo_en_escena(inc, "kit_forense") else 0.0)
 	# Sin los refuerzos que piden, trabajan más despacio (según la dificultad)
@@ -4057,6 +4543,8 @@ func _finalizar_evento(inc, exito: bool) -> void:
 	inc.exito = exito
 	inc.estado = "Resuelta"
 	inc.resultado = _texto_resultado(inc, exito)
+	if _gran_emergencia(inc):
+		_prensa(inc, exito)
 	if exito and inc.resultado_bien != "":
 		inc.resultado = inc.resultado_bien
 	elif not exito and inc.resultado_mal != "":
@@ -4097,6 +4585,11 @@ func _finalizar_evento(inc, exito: bool) -> void:
 				if v.habilidades.has("reanimacion"):
 					riesgo *= 0.6
 					break
+			for v in inc.unidades_en_escena():
+				if v.mejoras_amb.has("tecnico"):
+					riesgo *= 0.8
+				if v.mejoras_amb.has("equipamiento"):
+					riesgo *= 0.8
 			if _alguno_con_bono(inc, "pma"):
 				riesgo *= 0.3
 			elif _alguno_con_bono(inc, "vir") or _alguno_con_bono(inc, "medico") or _alguno_con_bono(inc, "heli_sanitario"):
@@ -4875,6 +5368,14 @@ func _texto_resultado(inc, exito: bool) -> String:
 	return "Paciente estabilizado." if exito else "El paciente está grave por la espera."
 
 
+## La UME apaga incendios como los bomberos (2.0), y el helicóptero de
+## bomberos cuenta como dotación de bomberos.
+func _servicio_efectivo(v, inc) -> String:
+	if v.servicio == "ume" and inc.categoria == "fuego" and not inc.requeridas.has("ume"):
+		return "bomberos"
+	return v.servicio
+
+
 func _vir_en(inc):
 	for o in inc.en_lugar:
 		if is_instance_valid(o) and o.incidente == inc and o.bono in ["vir", "moto_sanitaria"]:
@@ -5102,15 +5603,15 @@ func _aviso_muerte_natural() -> void:
 
 # ================================================================ AVISOS DE LAS PATRULLAS
 
-func _aviso_patrulla() -> void:
+func _aviso_patrulla(forzado = null) -> void:
 	var patrullas := []
 	for v in vehiculos:
-		if v.servicio == "policia" and v.estado == "Patrullando":
+		if v.servicio == "policia" and v.estado == "Patrullando" and not v.aereo:
 			patrullas.append(v)
-	if patrullas.is_empty():
+	if forzado == null and patrullas.is_empty():
 		_sonar_llamada()
 		return
-	var v = patrullas[randi() % patrullas.size()]
+	var v = forzado if forzado != null else patrullas[randi() % patrullas.size()]
 	var opciones_dia := [
 		["Vehículo averiado cortando la calzada", ["policia"], "policia", 90.0, "control"],
 		["Accidente leve sin heridos", ["policia"], "policia", 80.0, "control"],
@@ -5257,22 +5758,30 @@ func _mostrar_aviso(inc) -> void:
 	for i in inc.informacion:
 		texto += "\n· %s" % i
 	var opciones := []
-	if inc.estado == "Pendiente":
+	if inc.estado == "Pendiente" or inc.estado == "Persecución en curso":
+		var n := 0
+		for u in inc.unidades:
+			if is_instance_valid(u) and u.perseguir == sospechoso:
+				n += 1
+		if n > 0:
+			texto += "\nUnidades persiguiendo: %d. Con más patrullas es más fácil cercarlo; con el helicóptero no se escapa." % n
 		for v in vehiculos:
-			if v.servicio == "policia":
+			if v.servicio == "policia" and not inc.unidades.has(v):
 				var libre: bool = v.disponible()
-				var etiqueta: String = ("Enviar patrulla %s" % v.id_unidad) if libre else ("%s no disponible (%s)" % [v.id_unidad, v.estado])
+				var etiqueta: String = ("%s %s" % ["Unir a la persecución:" if n > 0 else "Enviar", v.id_unidad]) if libre else ("%s no disponible (%s)" % [v.id_unidad, v.estado])
 				opciones.append({"texto": etiqueta, "accion": _iniciar_persecucion.bind(v, inc), "activo": libre})
-		opciones.append({"texto": "Mantener vigilancia", "accion": _cerrar_panel})
-		opciones.append({"texto": "No intervenir", "accion": _descartar_aviso.bind(inc)})
+		if inc.estado == "Pendiente":
+			opciones.append({"texto": "Mantener vigilancia", "accion": _cerrar_panel})
+			opciones.append({"texto": "No intervenir", "accion": _descartar_aviso.bind(inc)})
 	opciones.append({"texto": "Volver al mapa", "accion": _cerrar_panel})
 	hud.mostrar_panel("%s · %s" % [inc.id_incidente, inc.titulo], texto, opciones)
 	hud.mirar_lugar(inc)
 
 
 func _iniciar_persecucion(v, inc) -> void:
-	if sospechoso == null or not is_instance_valid(sospechoso) or inc.estado != "Pendiente":
+	if sospechoso == null or not is_instance_valid(sospechoso) or not (inc.estado in ["Pendiente", "Persecución en curso"]):
 		return
+	var unirse: bool = inc.estado == "Persecución en curso"
 	v.deambular = false
 	v.en_emergencia = true
 	v.estado = "Persecución"
@@ -5282,8 +5791,102 @@ func _iniciar_persecucion(v, inc) -> void:
 	inc.estado = "Persecución en curso"
 	inc.unidades.append(v)
 	_sonido("sirena")
-	_radio(v, "Recibido, central. Vamos tras el vehículo.")
+	if v.aereo:
+		_cambiar_dinero(-Catalogo.COSTE_VUELO)
+		if v.position.distance_to(red.pos(v.nodo_base)) < 60.0:
+			v.espera_despegue = Vehiculo.DESPEGUE
+		_radio(v, "Helicóptero en el aire. No lo perderemos de vista y guiaremos a las patrullas.")
+	elif unirse:
+		_radio(v, "Nos unimos a la persecución. Intentamos cortarle el paso.")
+	else:
+		_radio(v, "Recibido, central. Vamos tras el vehículo.")
 	_cerrar_panel()
+
+
+## Persecuciones (2.0): con una sola patrulla puede escaparse; con varias lo
+## cercan y le cortan el paso; con el helicóptero en el aire no se escapa.
+var _t_persecucion := 0.0
+
+func _vigilar_cerco(delta: float) -> void:
+	if sospechoso == null or not is_instance_valid(sospechoso):
+		return
+	var inc = null
+	for i in incidentes:
+		if i.vehiculo_seguido == sospechoso and i.estado == "Persecución en curso":
+			inc = i
+	if inc == null:
+		_t_persecucion = 0.0
+		return
+	_t_persecucion += delta
+	if _t_persecucion < 15.0:
+		return
+	_t_persecucion = 0.0
+	var tierra: Array = []
+	var heli = null
+	for u in inc.unidades:
+		if is_instance_valid(u) and u.perseguir == sospechoso:
+			if u.aereo:
+				heli = u
+			else:
+				tierra.append(u)
+	if heli != null and randf() < 0.5:
+		_radio(heli, "Desde el aire: el vehículo va por %s." % red.calle_de_nodo(sospechoso.siguiente_nodo))
+	if tierra.size() >= 2 and randf() < 0.3 * (tierra.size() - 1) + (0.15 if heli != null else 0.0):
+		var corta = tierra[randi() % tierra.size()]
+		_radio(corta, "¡Le cortamos el paso en el cruce! ¡Vehículo parado!")
+		corta.perseguir = null
+		_on_interceptado(corta, sospechoso)
+		for u in tierra:
+			if u != corta and is_instance_valid(u):
+				u.perseguir = null
+				_radio(u, "Perseguido detenido por los compañeros. Volvemos.")
+				_regresar(u)
+		if heli != null:
+			heli.perseguir = null
+			_regresar(heli)
+		return
+	if heli == null:
+		var p_escape := 0.0
+		if tierra.size() == 1:
+			p_escape = 0.22
+		elif tierra.size() == 2:
+			p_escape = 0.08
+		if tierra.size() > 0 and randf() < p_escape:
+			for u in tierra:
+				u.perseguir = null
+				_radio(u, "Central, le hemos perdido. Se ha metido por los caminos.")
+				_regresar(u)
+			_sumar_reputacion(-1.0)
+			_sospechoso_se_va(inc, "El vehículo ha conseguido escapar. Con más patrullas o el helicóptero no se habría ido.")
+
+
+func _vigilancia_aerea(v) -> void:
+	_cambiar_dinero(-Catalogo.COSTE_VUELO)
+	if v.position.distance_to(red.pos(v.nodo_base)) < 60.0:
+		v.espera_despegue = Vehiculo.DESPEGUE
+	v.patrullar()
+	v.fase = "vigilancia_aerea"
+	_radio(v, "Despegamos para una vigilancia aérea sobre el pueblo.")
+	_programar(120.0, _fin_vigilancia_aerea.bind(v))
+	_programar(40.0, _vigilancia_detecta.bind(v))
+	_programar(85.0, _vigilancia_detecta.bind(v))
+	_cerrar_panel()
+
+
+func _vigilancia_detecta(v) -> void:
+	if not is_instance_valid(v) or v.fase != "vigilancia_aerea" or randf() > 0.6:
+		return
+	if randf() < 0.3:
+		_radio(v, "Central, desde el aire vemos una columna de humo. Pasamos la posición.")
+		_crear_incendio()
+	else:
+		_aviso_patrulla(v)
+
+
+func _fin_vigilancia_aerea(v) -> void:
+	if is_instance_valid(v) and v.fase == "vigilancia_aerea":
+		_radio(v, "Fin de la vigilancia aérea. Volvemos al helipuerto.")
+		_regresar(v)
 
 
 func _vigilar_persecucion() -> void:
@@ -5837,15 +6440,77 @@ func _consejo(clave: String, texto: String) -> void:
 
 # ================================================================ OBJETIVOS DEL TURNO
 
+## Objetivos del Ayuntamiento para cada turno (2.0: más objetivos y mejor pagados)
 const OBJETIVOS := [
-	{"id": "sin_perdidas", "texto": "No perder ninguna llamada", "premio": 1500},
-	{"id": "resolver4", "texto": "Resolver 4 emergencias o más", "premio": 1000},
-	{"id": "media4", "texto": "Nota media de 4 o más", "premio": 2000},
-	{"id": "sin_empeorar", "texto": "Que ninguna emergencia empeore", "premio": 1500},
-	{"id": "sin_heridos", "texto": "Ningún agente herido", "premio": 1000},
-	{"id": "relacionadas", "texto": "Atender 1 llamada relacionada", "premio": 800},
-	{"id": "historia_buena", "texto": "Terminar una historia con buen final", "premio": 1500},
+	{"id": "sin_perdidas", "texto": "No perder ninguna llamada", "premio": 2000},
+	{"id": "resolver4", "texto": "Resolver 4 emergencias o más", "premio": 1500},
+	{"id": "resolver8", "texto": "Resolver 8 emergencias o más", "premio": 3000},
+	{"id": "media4", "texto": "Nota media de 4 o más", "premio": 2500},
+	{"id": "sin_empeorar", "texto": "Que ninguna emergencia empeore", "premio": 2000},
+	{"id": "sin_heridos", "texto": "Ningún agente herido", "premio": 1500},
+	{"id": "sin_muertos", "texto": "Ningún fallecido en el turno", "premio": 2500},
+	{"id": "rapido", "texto": "Tiempo medio de llegada por debajo de 3 minutos", "premio": 2500},
+	{"id": "detenidos3", "texto": "Detener a 3 personas o más", "premio": 1500},
+	{"id": "relacionadas", "texto": "Atender 1 llamada relacionada", "premio": 1000},
+	{"id": "historia_buena", "texto": "Terminar una historia con buen final", "premio": 2000},
+	{"id": "rural", "texto": "Resolver un aviso fuera del pueblo", "premio": 1500},
 ]
+
+## Objetivos de la semana (7 días de juego): premios grandes
+const OBJETIVOS_SEMANA := [
+	{"id": "s_resueltas", "texto": "Resolver 35 emergencias esta semana", "meta": 35, "premio": 15000},
+	{"id": "s_sin_perdidas", "texto": "5 turnos sin perder ninguna llamada", "meta": 5, "premio": 12000},
+	{"id": "s_caso", "texto": "Resolver un caso de los detectives", "meta": 1, "premio": 10000},
+	{"id": "s_detenidos", "texto": "Detener a 20 personas", "meta": 20, "premio": 12000},
+	{"id": "s_sin_muertos", "texto": "4 turnos sin ningún fallecido", "meta": 4, "premio": 15000},
+	{"id": "s_historias", "texto": "Terminar bien 4 historias", "meta": 4, "premio": 14000},
+]
+
+
+func _semana() -> Dictionary:
+	if not partida.has("semana") or not (partida["semana"] is Dictionary) or (partida["semana"] as Dictionary).is_empty():
+		var lista: Array = OBJETIVOS_SEMANA.duplicate()
+		lista.shuffle()
+		var objs := []
+		for o in lista.slice(0, 2):
+			objs.append({"id": o["id"], "texto": o["texto"], "meta": o["meta"], "premio": o["premio"], "progreso": 0, "pagado": false})
+		partida["semana"] = {"inicio": int(partida["dia"]), "objetivos": objs}
+	return partida["semana"]
+
+
+## Al acabar el turno: suma el progreso semanal y paga lo conseguido.
+func _texto_semana() -> String:
+	var sem := _semana()
+	var texto := "\n\nObjetivos de la semana del Ayuntamiento (desde el día %d):" % int(sem["inicio"])
+	for o in sem["objetivos"]:
+		if not o["pagado"]:
+			match String(o["id"]):
+				"s_resueltas":
+					o["progreso"] = int(o["progreso"]) + stats["resueltas"]
+				"s_sin_perdidas":
+					if stats["perdidas"] == 0 and stats["llamadas"] > 0:
+						o["progreso"] = int(o["progreso"]) + 1
+				"s_caso":
+					o["progreso"] = int(o["progreso"]) + int(stats.get("casos_resueltos", 0))
+				"s_detenidos":
+					o["progreso"] = int(o["progreso"]) + int(stats["detenidos"])
+				"s_sin_muertos":
+					if stats["fallecidos"] == 0 and stats["resueltas"] > 0:
+						o["progreso"] = int(o["progreso"]) + 1
+				"s_historias":
+					o["progreso"] = int(o["progreso"]) + stats["historias_buenas"]
+			if int(o["progreso"]) >= int(o["meta"]):
+				o["pagado"] = true
+				partida["dinero"] = int(partida["dinero"]) + int(o["premio"])
+				hud.set_dinero(partida["dinero"])
+				texto += "\n· %s [CONSEGUIDO +%s]" % [o["texto"], Hud.formato_euros(o["premio"])]
+				continue
+		texto += "\n· %s: %d de %d%s" % [o["texto"], mini(int(o["progreso"]), int(o["meta"])), int(o["meta"]), " ✔" if o["pagado"] else ""]
+	# Una semana dura 7 días: luego llegan objetivos nuevos
+	if int(partida["dia"]) - int(sem["inicio"]) >= 6:
+		partida["semana"] = {}
+		texto += "\nLa semana termina: mañana el Ayuntamiento pondrá objetivos nuevos."
+	return texto
 
 
 func _elegir_objetivos() -> void:
@@ -5855,7 +6520,14 @@ func _elegir_objetivos() -> void:
 	var nombres := []
 	for o in objetivos:
 		nombres.append(o["texto"])
-	hud.notificar("Objetivos del turno: " + " · ".join(PackedStringArray(nombres)), Color("ffd166"))
+	hud.notificar("Objetivos del Ayuntamiento: " + " · ".join(PackedStringArray(nombres)), Color("ffd166"))
+	var sem := _semana()
+	var semanales := []
+	for o in sem["objetivos"]:
+		if not o["pagado"]:
+			semanales.append("%s (%d/%d)" % [o["texto"], int(o["progreso"]), int(o["meta"])])
+	if not semanales.is_empty():
+		hud.notificar("Objetivos de la semana: " + " · ".join(PackedStringArray(semanales)), Color("ffd166"))
 
 
 func _objetivo_cumplido(id: String) -> bool:
@@ -5870,6 +6542,16 @@ func _objetivo_cumplido(id: String) -> bool:
 			return stats["empeoradas"] == 0 and stats["resueltas"] > 0
 		"sin_heridos":
 			return stats["heridos"] == 0 and stats["resueltas"] > 0
+		"resolver8":
+			return stats["resueltas"] >= 8
+		"sin_muertos":
+			return stats["fallecidos"] == 0 and stats["resueltas"] > 0
+		"rapido":
+			return stats["con_tiempo"] > 0 and stats["tiempo_total"] / stats["con_tiempo"] < 180.0
+		"detenidos3":
+			return stats["detenidos"] >= 3
+		"rural":
+			return int(stats.get("rurales", 0)) >= 1
 		"relacionadas":
 			return stats["relacionadas"] >= 1
 		"historia_buena":

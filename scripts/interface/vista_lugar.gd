@@ -33,6 +33,7 @@ var _chispas: Array = []    # partículas [pos, vel, vida, color]
 var fuente: Font
 var _edad_serv := {}        # servicio -> segundos desde que llegó la primera unidad
 var _puerta_serv := {}      # puerta del vehículo -> servicio
+var _cache_sub := {}        # id del aviso -> [subtipo, ambiente] (2.0)
 const T_LLEGADA := 2.0      # el vehículo entra en escena y aparca
 const T_BAJAR := 0.7        # abren las puertas y se bajan
 const FUERA := Vector2(-5000, -5000)
@@ -142,13 +143,190 @@ func _draw() -> void:
 	if _hay("policia") and String(inc.servicio_necesario) != "policia":
 		_corte_trafico()
 	_dibujar_chispas()
+	_clima_escena()
 	_carteles()
 	draw_rect(ESCENA, Color("2a6f8f"), false, 1.0)
 	_dibujar_estado()
 	draw_rect(Rect2(Vector2.ZERO, size), Color("3fb6d8"), false, 2.0)
 
 
+# ================================================================ ESCENAS PROPIAS (2.0)
+## Qué es exactamente el aviso (contenedor, coche, campo, banco...) según el
+## título y la información, y dónde pasa (pueblo, campo, monte, embalse...).
+func _subtipo() -> String:
+	return String(_detectar()[0])
+
+
+func _ambiente() -> String:
+	return String(_detectar()[1])
+
+
+func _detectar() -> Array:
+	var id := String(inc.id_incidente)
+	if _cache_sub.has(id):
+		return _cache_sub[id]
+	var partes := [String(inc.titulo)]
+	for x in inc.informacion:
+		partes.append(String(x))
+	var t := " ".join(PackedStringArray(partes)).to_lower()
+	var sub := ""
+	var amb := "ciudad"
+	match String(inc.categoria):
+		"fuego":
+			if t.contains("contenedor"):
+				sub = "contenedor"
+			elif t.contains("coche") or t.contains("turismo"):
+				sub = "coche"
+			elif t.contains("campo") or t.contains("cereal") or t.contains("rastrojo") or t.contains("forestal") or t.contains("monte") or t.contains("pinar"):
+				sub = "campo"
+			elif t.contains("nave") or t.contains("polígono") or t.contains("industrial") or t.contains("químic") or t.contains("camión"):
+				sub = "nave"
+			elif t.contains("butano") or t.contains("explosión"):
+				sub = "explosion"
+			elif t.contains("cocina") or t.contains("sartén"):
+				sub = "cocina"
+		"atrapado":
+			if t.contains("tractor"):
+				sub = "tractor"
+			elif t.contains("derrumbe") or t.contains("escombro"):
+				sub = "derrumbe"
+			elif t.contains("riada") or t.contains("inunda"):
+				sub = "riada"
+			elif t.contains("nieve") or t.contains("nevada"):
+				sub = "nieve"
+			elif t.contains("cantera") or t.contains("desprendimiento"):
+				sub = "cantera"
+			elif t.contains("bebé") or t.contains("encerrado"):
+				sub = "bebe"
+		"medico":
+			if t.contains("atropell") or t.contains("ciclista"):
+				sub = "atropello"
+			elif t.contains("accidente") or t.contains("vuelco") or t.contains("salido de la vía") or t.contains("choque"):
+				sub = "accidente"
+			elif t.contains("parto"):
+				sub = "parto"
+			elif t.contains("atentado") or t.contains("explosión"):
+				sub = "atentado"
+		"pelea":
+			if t.contains("campal") or t.contains("multitud") or t.contains("bandas") or t.contains("parque"):
+				sub = "masiva"
+			elif t.contains("armad") or t.contains("rehén") or t.contains("rehenes") or t.contains("atrincher"):
+				sub = "armado"
+			else:
+				sub = "bar"
+		"robo":
+			if t.contains("banco") or t.contains("sucursal"):
+				sub = "banco"
+			elif t.contains("supermercado") or t.contains("tienda") or t.contains("bolso") or t.contains("tirón") or t.contains("comercio"):
+				sub = "tienda"
+			elif t.contains("finca") or t.contains("gasóleo") or t.contains("cobre"):
+				sub = "finca"
+		"control":
+			if t.contains("fiesta") or t.contains("música") or t.contains("ruido"):
+				sub = "fiesta"
+			elif t.contains("trompo") or t.contains("carrera") or t.contains("derrap"):
+				sub = "trompos"
+			elif t.contains("paquete") or t.contains("bomba"):
+				sub = "bomba"
+		"busqueda":
+			if t.contains("embalse") or t.contains("bañista") or t.contains("pantano"):
+				sub = "embalse"
+	if t.contains("monte") or t.contains("senderista") or t.contains("pinar") or t.contains("forestal"):
+		amb = "monte"
+	elif t.contains("embalse") or t.contains("pantano") or t.contains("bañista"):
+		amb = "agua"
+	elif sub in ["campo", "tractor", "finca"] or t.contains("finca") or t.contains("granja") or t.contains("cortijo") or t.contains("carretera"):
+		amb = "campo"
+	elif sub in ["nave", "cantera"] or t.contains("polígono"):
+		amb = "industrial"
+	else:
+		var raiz = get_tree().current_scene
+		if raiz != null and "datos_mapa" in raiz:
+			var pr: Array = raiz.datos_mapa.get("pueblo_rect", [])
+			if pr.size() == 4 and not Rect2(float(pr[0]), float(pr[1]), float(pr[2]), float(pr[3])).has_point(inc.pos_exacta):
+				amb = "campo"
+	var r := [sub, amb]
+	_cache_sub[id] = r
+	return r
+
+
 func _fondo() -> void:
+	match _ambiente():
+		"campo":
+			_fondo_campo(false)
+		"monte":
+			_fondo_campo(true)
+		"agua":
+			_fondo_agua()
+		"industrial":
+			_fondo_ciudad(true)
+		_:
+			_fondo_ciudad(false)
+
+
+func _fondo_campo(monte: bool) -> void:
+	var noche := _es_noche()
+	var cielo := Color("0b1a3a") if noche else Color("2a5a94")
+	draw_rect(Rect2(ESCENA.position, Vector2(ESCENA.size.x, Y_ACERA - ESCENA.position.y)), cielo)
+	var colina := Color("16304a") if noche else Color("3e6b4a")
+	var pts := PackedVector2Array([Vector2(ESCENA.position.x, Y_ACERA - 40)])
+	for k in 9:
+		pts.append(Vector2(ESCENA.position.x + k * 65.0, Y_ACERA - 40 - 26.0 * absf(sin(k * 1.7))))
+	pts.append(Vector2(ESCENA.end.x, Y_ACERA - 30))
+	pts.append(Vector2(ESCENA.end.x, Y_ACERA))
+	pts.append(Vector2(ESCENA.position.x, Y_ACERA))
+	draw_colored_polygon(pts, colina)
+	if monte:
+		for k in 12:
+			var x := ESCENA.position.x + 20 + k * 43.0
+			var y := Y_ACERA - 4 - fmod(k * 13.0, 18.0)
+			draw_rect(Rect2(x - 2, y - 10, 4, 12), Color("4a3420"))
+			draw_colored_polygon(PackedVector2Array([Vector2(x - 12, y - 8), Vector2(x, y - 40), Vector2(x + 12, y - 8)]), Color("123a28") if noche else Color("1f5a3a"))
+	else:
+		draw_rect(Rect2(ESCENA.position.x, Y_ACERA - 26, ESCENA.size.x, 26), Color("4a4022") if noche else Color("a8903e"))
+		for k in 30:
+			var x := ESCENA.position.x + k * 18.0
+			draw_line(Vector2(x, Y_ACERA - 2), Vector2(x + 3, Y_ACERA - 20), Color("5e5230") if noche else Color("c9ae52"), 1.0)
+		draw_rect(Rect2(ESCENA.position.x + 30, Y_ACERA - 62, 46, 30), Color("5c584f") if noche else Color("d8cfc0"))
+		draw_colored_polygon(PackedVector2Array([Vector2(ESCENA.position.x + 26, Y_ACERA - 62), Vector2(ESCENA.position.x + 53, Y_ACERA - 80), Vector2(ESCENA.position.x + 80, Y_ACERA - 62)]), Color("8a3b2a"))
+	draw_rect(Rect2(ESCENA.position.x, Y_ACERA, ESCENA.size.x, Y_CALZADA - Y_ACERA), Color("3a3224") if noche else Color("6b5a3e"))
+	draw_rect(Rect2(ESCENA.position.x, Y_CALZADA, ESCENA.size.x, ESCENA.end.y - Y_CALZADA), Color("2a2a2e"))
+	if noche:
+		for k in 20:
+			draw_circle(Vector2(ESCENA.position.x + fmod(k * 97.0, ESCENA.size.x), ESCENA.position.y + fmod(k * 37.0, 80.0) + 4), 1.0, Color(1, 1, 1, 0.6))
+
+
+func _fondo_agua() -> void:
+	_fondo_campo(false)
+	var agua := Rect2(300, Y_ACERA - 70, ESCENA.end.x - 300, 70)
+	draw_rect(agua, Color("0e2c48") if _es_noche() else Color("1d5a8c"))
+	for k in 6:
+		var y := agua.position.y + 10 + k * 10.0
+		var x := agua.position.x + fmod(_t * 20.0 + k * 40.0, agua.size.x - 30.0)
+		draw_line(Vector2(x, y), Vector2(x + 22, y), Color(1, 1, 1, 0.25), 1.0)
+
+
+## Lluvia o nieve sobre la escena, según el tiempo que hacía al llegar el aviso.
+func _clima_escena() -> void:
+	var c := String(inc.clima)
+	var nieve := _subtipo() == "nieve" or c == "nieve"
+	if c in ["lluvia", "tormenta"]:
+		for k in 40:
+			var x := ESCENA.position.x + fmod(k * 53.0 + _t * 60.0, ESCENA.size.x)
+			var y := ESCENA.position.y + fmod(k * 31.0 + _t * 420.0, ESCENA.size.y)
+			draw_line(Vector2(x, y), Vector2(x - 3, y + 10), Color(0.7, 0.8, 1.0, 0.45), 1.0)
+		if c == "tormenta" and fmod(_t, 7.0) < 0.12:
+			draw_rect(ESCENA, Color(1, 1, 1, 0.25))
+	if nieve:
+		draw_rect(Rect2(ESCENA.position.x, Y_ACERA - 4, ESCENA.size.x, 8), Color(0.95, 0.97, 1.0, 0.9))
+		draw_rect(Rect2(ESCENA.position.x, Y_SUELO + 2, ESCENA.size.x, ESCENA.end.y - Y_SUELO - 2), Color(0.95, 0.97, 1.0, 0.7))
+		for k in 45:
+			var x := ESCENA.position.x + fmod(k * 41.0 + sin(_t + k) * 10.0, ESCENA.size.x)
+			var y := ESCENA.position.y + fmod(k * 29.0 + _t * 40.0, ESCENA.size.y)
+			draw_circle(Vector2(x, y), 1.6, Color(1, 1, 1, 0.85))
+
+
+func _fondo_ciudad(industrial: bool) -> void:
 	var noche := _es_noche()
 	var cielo := Color("0b1a3a") if noche else Color("1b3a6b")
 	draw_rect(Rect2(ESCENA.position, Vector2(ESCENA.size.x, Y_ACERA - ESCENA.position.y)), cielo)
@@ -158,7 +336,12 @@ func _fondo() -> void:
 	while x < ESCENA.end.x:
 		var ancho := 40.0 + fmod(i * 37.0, 30.0)
 		var alto := 60.0 + fmod(i * 53.0, 70.0)
-		draw_rect(Rect2(x, Y_ACERA - alto, ancho - 4.0, alto), Color("13254a") if noche else Color("274a80"))
+		if industrial:
+			ancho = 90.0
+			alto = 50.0 + fmod(i * 17.0, 20.0)
+			draw_colored_polygon(PackedVector2Array([Vector2(x, Y_ACERA - alto), Vector2(x + (ancho - 4.0) / 2.0, Y_ACERA - alto - 16), Vector2(x + ancho - 4.0, Y_ACERA - alto)]), Color("3a4658"))
+		var col_ed := Color("4a5668") if industrial else (Color("13254a") if noche else Color("274a80"))
+		draw_rect(Rect2(x, Y_ACERA - alto, ancho - 4.0, alto), col_ed)
 		if noche:
 			for k in 3:
 				if fmod(i * 7.0 + k * 3.0, 5.0) < 2.0:
@@ -262,6 +445,7 @@ func _escena_medica() -> void:
 			salida["ambulancia"] = (_t_fin - 3.6) * 160.0
 	var puertas := _aparcados(salida)
 	var puerta_amb: Vector2 = puertas.get("ambulancia", Vector2(ESCENA.position.x + 46, Y_SUELO - 4))
+	_props_medica(_subtipo(), paciente)
 	# Curiosos
 	_persona(Vector2(446, Y_ACERA + 2), "civil", "pie", 0.0, -1.0)
 	_persona(Vector2(470, Y_ACERA + 4), "civil", "pie", 0.0, -1.0)
@@ -321,6 +505,37 @@ func _escena_medica() -> void:
 		_apoyo_alrededor(paciente, puertas, n_amb == 0)
 
 
+## Lo que rodea al paciente según el aviso: coche accidentado, bici, etc.
+func _props_medica(sub: String, paciente: Vector2) -> void:
+	match sub:
+		"accidente":
+			_coche_accidentado(Vector2(440, Y_SUELO), false)
+			for k in 8:
+				draw_line(Vector2(400 + k * 9.0, Y_SUELO - 2), Vector2(403 + k * 9.0, Y_SUELO - 4), Color(0.8, 0.9, 1.0, 0.8), 1.0)   # cristales
+			draw_colored_polygon(PackedVector2Array([Vector2(510, Y_SUELO), Vector2(516, Y_SUELO - 12), Vector2(522, Y_SUELO)]), Color("ff3b30"))   # triángulo
+		"atropello":
+			# Bici tirada junto al herido y el coche parado
+			var b := paciente + Vector2(-30, 4)
+			draw_arc(b + Vector2(-10, -6), 7.0, 0.0, TAU, 16, Color("c0c6cf"), 1.5)
+			draw_arc(b + Vector2(12, -4), 7.0, 0.0, TAU, 16, Color("c0c6cf"), 1.5)
+			draw_line(b + Vector2(-10, -6), b + Vector2(2, -12), Color("e74c3c"), 2.0)
+			draw_line(b + Vector2(2, -12), b + Vector2(12, -4), Color("e74c3c"), 2.0)
+			_vehiculo(Vector2(450, Y_SUELO), "sospechoso", -1.0, false)
+			_persona(Vector2(410, Y_SUELO - 2), "civil", "pie", 0.0, -1.0)   # el conductor
+		"parto":
+			_vehiculo(Vector2(430, Y_SUELO), "sospechoso", -1.0, false)
+			draw_rect(Rect2(Vector2(404, Y_SUELO - 24), Vector2(4, 16)), Color("9aa5b1"))   # puerta abierta
+		"atentado":
+			for k in 10:
+				var x := 160.0 + fmod(k * 47.0, 330.0)
+				draw_rect(Rect2(x, Y_ACERA + 2 + fmod(k * 5.0, 8.0), 8 + fmod(k * 3.0, 6.0), 4), Color("5a5a60"))
+			for k in 3:
+				_persona(Vector2(180 + k * 120.0, Y_ACERA + 10), "herido", "tumbado")
+				_sangre(Vector2(184 + k * 120.0, Y_ACERA + 12), 0.8)
+			_humo_suave(Vector2(420, Y_ACERA - 20))
+			_humo_suave(Vector2(260, Y_ACERA - 30))
+
+
 func _escena_atrapado() -> void:
 	var p: float = inc.progreso
 	var fin: bool = inc.evento == "terminado"
@@ -333,11 +548,32 @@ func _escena_atrapado() -> void:
 		if _t_fin > 3.6:
 			salida["ambulancia"] = (_t_fin - 3.6) * 160.0
 	var puertas := _aparcados(salida)
-	# Coche accidentado
+	# Lo que atrapa a la persona: coche, tractor, escombros, agua...
 	var sin_techo := p > 0.6 or fin
-	_coche_accidentado(coche, sin_techo)
-	if not fin or not exito:
+	var sub := _subtipo()
+	match sub:
+		"tractor":
+			_tractor_volcado(coche)
+		"derrumbe", "cantera":
+			_escombros(coche, 1.0 - p * 0.6 if not fin else 0.3, sub == "cantera")
+		"riada":
+			var nivel := (1.0 - p * 0.7) if not fin else 0.2
+			draw_rect(Rect2(ESCENA.position.x, Y_SUELO - 30.0 * nivel, ESCENA.size.x, ESCENA.end.y - Y_SUELO + 30.0 * nivel), Color(0.25, 0.4, 0.55, 0.75))
+			_coche_accidentado(coche, false)
+			draw_rect(Rect2(ESCENA.position.x, Y_SUELO - 22.0 * nivel, ESCENA.size.x, 22.0 * nivel + 4.0), Color(0.3, 0.45, 0.6, 0.6))
+		"bebe":
+			_vehiculo(coche, "sospechoso", 1.0, false)
+			if not fin:
+				draw_circle(coche + Vector2(6, -22), 3.0, PIEL)
+				if int(_t * 3.0) % 2 == 0:
+					_bocadillo(coche + Vector2(8, -40), "¡Buaaa!")
+			draw_circle(Vector2(440, ESCENA.position.y + 26), 16.0, Color(1.0, 0.85, 0.3, 0.9))   # sol
+		_:
+			_coche_accidentado(coche, sin_techo)
+	if (not fin or not exito) and not (sub in ["derrumbe", "cantera", "bebe"]):
 		draw_circle(coche + Vector2(-4, -26), 4.5, PIEL)   # la persona atrapada dentro
+	elif not fin and sub in ["derrumbe", "cantera"] and int(_t * 1.2) % 2 == 0:
+		draw_line(coche + Vector2(-6, -18), coche + Vector2(-12, -30), PIEL, 3.0)   # una mano entre los escombros
 	if not fin:
 		_humo_suave(coche + Vector2(30, -26))
 	# Otros heridos del accidente, sentados en la acera esperando a los sanitarios
@@ -388,6 +624,12 @@ func _escena_fuego() -> void:
 	if fin:
 		fuego = 0.0 if exito else 0.55
 	var puertas := _aparcados()
+	var sub := _subtipo()
+	if sub in ["contenedor", "coche", "campo", "nave"]:
+		_fuego_especial(sub, fuego, fin, exito, puertas)
+		return
+	if sub == "cocina":
+		fuego = minf(fuego, 0.22)
 	# Edificio
 	draw_rect(edificio, Color("2c3e66") if not (fin and not exito) else Color("1c1f26"))
 	draw_rect(edificio, Color("7fb2ff"), false, 1.5)
@@ -453,6 +695,89 @@ func _escena_fuego() -> void:
 		_persona(_entrar(puertas.get("policia", sitio), sitio), "policia", "trafico", _t * 3.0, -1.0)
 
 
+## Incendios que no son de un edificio: contenedor, coche, campo o nave.
+func _fuego_especial(sub: String, fuego: float, fin: bool, exito: bool, puertas: Dictionary) -> void:
+	var focos: Array = []
+	match sub:
+		"contenedor":
+			for k in 2:
+				var c := Vector2(360 + k * 56.0, Y_ACERA + 4)
+				var quemado := fuego > 0.05 or (fin and not exito)
+				draw_rect(Rect2(c + Vector2(-22, -34), Vector2(44, 34)), Color("1e5a2a") if not quemado or k == 1 else Color("23201c"))
+				draw_rect(Rect2(c + Vector2(-24, -38), Vector2(48, 6)), Color("14401e") if not quemado or k == 1 else Color("191612"))
+				draw_circle(c + Vector2(-14, 2), 4.0, Color("101418"))
+				draw_circle(c + Vector2(14, 2), 4.0, Color("101418"))
+				if k == 0 and fuego > 0.02:
+					for f in 3:
+						_llama(c + Vector2(-12 + f * 12.0, -40), 18.0 + fuego * 30.0 + 5.0 * sin(_t * 9.0 + f))
+					focos.append(c + Vector2(0, -40))
+			# Bolsas de basura por el suelo
+			for k in 4:
+				_elipse(Vector2(318 + k * 14.0, Y_ACERA + 8), 6.0, 4.0, Color("2a2a30"))
+		"coche":
+			var c := Vector2(380, Y_SUELO)
+			_coche_accidentado(c, fuego > 0.3 or (fin and not exito))
+			if fuego > 0.02:
+				for f in 4:
+					_llama(c + Vector2(-24 + f * 16.0, -26), 16.0 + fuego * 34.0 + 5.0 * sin(_t * 10.0 + f))
+				focos.append(c + Vector2(0, -28))
+			elif fin:
+				draw_colored_polygon(PackedVector2Array([c + Vector2(-32, -6), c + Vector2(-24, -20), c + Vector2(20, -18), c + Vector2(30, -6)]), Color("1a1a1a"))
+		"campo":
+			# Frente de fuego que avanza por el campo
+			var frente := 300.0 + (1.0 - fuego) * 120.0
+			for f in 9:
+				var x := 300.0 + f * 24.0
+				if fuego > 0.02 and x >= frente - 40.0:
+					_llama(Vector2(x, Y_ACERA - 10), 20.0 + fuego * 40.0 + 6.0 * sin(_t * 8.0 + f))
+				elif x < frente:
+					draw_rect(Rect2(x - 12, Y_ACERA - 26, 24, 26), Color("2a221a"))
+			if fuego > 0.02:
+				focos.append(Vector2(frente + 20, Y_ACERA - 14))
+				focos.append(Vector2(frente + 80, Y_ACERA - 14))
+		"nave":
+			var nave := Rect2(300, 120, 210, Y_ACERA - 120)
+			draw_rect(nave, Color("5a6170") if not (fin and not exito) else Color("26282d"))
+			draw_colored_polygon(PackedVector2Array([nave.position, nave.position + Vector2(nave.size.x / 2.0, -26), nave.position + Vector2(nave.size.x, 0)]), Color("454b57"))
+			for k in 6:
+				draw_line(nave.position + Vector2(10 + k * 34.0, 10), nave.position + Vector2(10 + k * 34.0, nave.size.y), Color("4a505c"), 2.0)
+			draw_rect(Rect2(nave.position + Vector2(70, nave.size.y - 60), Vector2(70, 60)), Color("2a2e36"))
+			if fuego > 0.02:
+				for f in 4:
+					_llama(nave.position + Vector2(40 + f * 44.0, -10), 22.0 + fuego * 40.0 + 6.0 * sin(_t * 8.0 + f))
+				focos.append(nave.position + Vector2(105, 20))
+				focos.append(nave.position + Vector2(160, 0))
+	# Humo
+	if fuego > 0.05 or (fin and exito and _t_fin < 6.0):
+		var gris := 0.2 if fuego > 0.05 else 0.55
+		var base: Vector2 = focos[0] if not focos.is_empty() else Vector2(400, Y_ACERA - 40)
+		for k in 6:
+			var fase := fmod(_t * 0.4 + k * 0.17, 1.0)
+			draw_circle(base + Vector2(k * 12.0 + fase * 40.0, -fase * 90.0), 10.0 + fase * 22.0, Color(gris, gris, gris + 0.03, 0.5 * (1.0 - fase)))
+	# Bomberos con manguera apuntando a los focos
+	var puerta_bom: Vector2 = puertas.get("bomberos", Vector2(ESCENA.position.x + 46, Y_SUELO - 4))
+	var n_bom := _gente("bomberos") + _gente("ume")
+	for i in mini(n_bom, 4):
+		var sitio := Vector2(230 + (i % 2) * 34.0, Y_ACERA + 6 - (i / 2) * 2.0)
+		var pos := _entrar(puerta_bom, sitio, i * 0.25)
+		var andando := _andando(puerta_bom, sitio, i * 0.25)
+		var tipo_p := "bomberos" if i < _gente("bomberos") else "ume"
+		_persona(pos, tipo_p, "andar" if andando else ("manguera" if fuego > 0.0 else "pie"), _t * 8.0, 1.0)
+		if not andando and fuego > 0.0 and not focos.is_empty():
+			_chorro(pos + Vector2(12, -14), focos[(i + int(_t * 0.7)) % focos.size()])
+	if n_bom > 0 and not fin:
+		draw_line(puerta_bom + Vector2(20, -2), Vector2(230, Y_ACERA + 6), Color("e0c060"), 2.0)
+	# Vecinos mirando y policía cortando el paso
+	_persona(Vector2(150, Y_ACERA + 4), "civil", "pie", 0.0, 1.0)
+	_persona(Vector2(172, Y_ACERA + 6), "civil", "saluda" if fuego > 0.3 else "pie", _t * 2.0, 1.0)
+	for i in mini(_gente("policia"), 2):
+		var sitio := Vector2(510 - i * 20.0, Y_SUELO - 2)
+		_persona(_entrar(puertas.get("policia", sitio), sitio), "policia", "trafico", _t * 3.0, -1.0)
+	for i in mini(_gente("ambulancia"), 2):
+		var sitio := Vector2(120 + i * 22.0, Y_ACERA + 6)
+		_persona(_entrar(puertas.get("ambulancia", sitio), sitio), "ambulancia", "pie", 0.0, 1.0)
+
+
 func _escena_pelea() -> void:
 	var p: float = inc.progreso
 	var fin: bool = inc.evento == "terminado"
@@ -461,6 +786,10 @@ func _escena_pelea() -> void:
 	if fin and exito and _t_fin > 3.4:
 		salida["policia"] = (_t_fin - 3.4) * 150.0
 	var puertas := _aparcados(salida)
+	var sub := _subtipo()
+	if sub == "masiva" or sub == "armado":
+		_pelea_especial(sub, p, fin, exito, puertas)
+		return
 	# Fachada del bar
 	var bar := Rect2(300, 120, 200, Y_ACERA - 120)
 	draw_rect(bar, Color("3a2a4a"))
@@ -507,6 +836,56 @@ func _escena_pelea() -> void:
 		_persona(pos, "ambulancia", "agachado", 0.0, 1.0 if i == 0 else -1.0)
 
 
+## Peleas multitudinarias (muchos implicados) y personas armadas o atrincheradas.
+func _pelea_especial(sub: String, p: float, fin: bool, exito: bool, puertas: Dictionary) -> void:
+	var puerta_pol: Vector2 = puertas.get("policia", Vector2(ESCENA.position.x + 46, Y_SUELO - 4))
+	var n_pol := _gente("policia") + _gente("geo")
+	if sub == "masiva":
+		var calmados := p > 0.7 or fin
+		for i in 10:
+			var base := Vector2(220 + (i % 5) * 50.0, Y_ACERA + 2 + (i / 5) * 8.0)
+			if not calmados:
+				base += Vector2(sin(_t * 6.0 + i * 1.7) * 8.0, 0)
+				_persona(base, "sospechoso" if i % 2 == 0 else "civil", "pelea", _t * 9.0 + i, 1.0 if i % 2 == 0 else -1.0)
+			elif exito and i < 6:
+				_persona(base, "sospechoso", "esposado", 0.0, -1.0)
+			elif not exito:
+				_persona(base + Vector2(fmod(_t_fin, 4.0) * 60.0, 0), "sospechoso", "andar", _t * 10.0, 1.0)
+		if not calmados:
+			for k in 3:
+				var bx := 250.0 + fmod(_t * 90.0 + k * 70.0, 200.0)
+				draw_line(Vector2(bx, Y_ACERA - 30 - k * 6), Vector2(bx + 6, Y_ACERA - 36 - k * 6), Color("7fd07f"), 2.0)   # botellas volando
+		# Línea de agentes con escudos que avanza
+		var avance := clampf(p, 0.0, 1.0) * 60.0
+		for i in mini(n_pol, 5):
+			var sitio := Vector2(150 + i * 4.0 + avance, Y_ACERA + 4 + i * 2.0)
+			var pos := _entrar(puerta_pol, sitio, i * 0.2)
+			_persona(pos, "geo" if i < _gente("geo") else "policia", "pie", 0.0, 1.0)
+			draw_rect(Rect2(pos + Vector2(6, -24), Vector2(5, 18)), Color(0.55, 0.65, 0.78, 0.85))
+		_sangre(Vector2(300, Y_ACERA + 12), 1.0)
+		_persona(Vector2(300, Y_ACERA + 10), "herido", "tumbado")
+	else:
+		# Persona armada en un portal; agentes parapetados tras sus coches
+		var portal := Rect2(380, 130, 120, Y_ACERA - 130)
+		draw_rect(portal, Color("3b4a6b"))
+		draw_rect(Rect2(portal.position + Vector2(44, portal.size.y - 54), Vector2(32, 54)), Color("141c30"))
+		var rendido := p > 0.8 or fin
+		var arm := portal.position + Vector2(60, portal.size.y)
+		if not rendido:
+			_persona(arm, "sospechoso", "pie", 0.0, -1.0)
+			draw_line(arm + Vector2(-6, -18), arm + Vector2(-24, -20), Color("2b2b2b"), 3.0)   # arma
+			if int(_t * 2.0) % 3 == 0:
+				_bocadillo(arm + Vector2(0, -44), "¡Que nadie se acerque!")
+		elif exito:
+			_persona(arm + Vector2(-40, 0), "sospechoso", "esposado", 0.0, -1.0)
+		for i in mini(n_pol, 4):
+			var sitio := Vector2(220 + i * 30.0, Y_SUELO - 2)
+			var pos := _entrar(puerta_pol, sitio, i * 0.2)
+			_persona(pos, "geo" if i < _gente("geo") else "policia", "pie", 0.0, 1.0)
+		if n_pol > 0 and not rendido:
+			_bocadillo(Vector2(250, Y_SUELO - 50), "Suelta el arma, vamos a hablar")
+
+
 func _escena_robo() -> void:
 	var p: float = inc.progreso
 	var fin: bool = inc.evento == "terminado"
@@ -516,8 +895,29 @@ func _escena_robo() -> void:
 		salida["policia"] = (_t_fin - 3.4) * 150.0
 	var puertas := _aparcados(salida)
 	var casa := Rect2(300, 110, 190, Y_ACERA - 110)
-	draw_colored_polygon(PackedVector2Array([casa.position + Vector2(-10, 0), casa.position + Vector2(casa.size.x / 2.0, -40), casa.position + Vector2(casa.size.x + 10, 0)]), Color("5a2e2e"))
-	draw_rect(casa, Color("3b4a6b"))
+	match _subtipo():
+		"banco":
+			draw_rect(casa, Color("5d6d7e"))
+			draw_rect(Rect2(casa.position + Vector2(20, -24), Vector2(150, 24)), Color("1f3a5f"))
+			draw_string(fuente, casa.position + Vector2(52, -6), "BANCO", HORIZONTAL_ALIGNMENT_LEFT, 100, 18, Color("f1c40f"))
+			for k in 4:
+				draw_line(casa.position + Vector2(10 + k * 56.0, 0), casa.position + Vector2(10 + k * 56.0, casa.size.y), Color("8a9aab"), 4.0)   # columnas
+			if not fin and int(_t * 3.0) % 2 == 0:
+				draw_circle(casa.position + Vector2(casa.size.x - 14, 14), 6.0, Color("ff3b30"))   # alarma
+		"tienda":
+			draw_rect(casa, Color("3d5a4a"))
+			draw_rect(Rect2(casa.position + Vector2(0, 0), Vector2(casa.size.x, 20)), Color("e67e22"))
+			draw_string(fuente, casa.position + Vector2(50, 15), "SUPERMERCADO", HORIZONTAL_ALIGNMENT_LEFT, 140, 13, Color.WHITE)
+			for k in 6:
+				draw_line(casa.position + Vector2(k * 32.0, 20), casa.position + Vector2(k * 32.0 + 16, 20 + 10), Color("f5f5f5"), 2.0)   # toldo
+		"finca":
+			draw_rect(casa, Color("8a7a62"))
+			draw_colored_polygon(PackedVector2Array([casa.position + Vector2(-10, 0), casa.position + Vector2(casa.size.x / 2.0, -30), casa.position + Vector2(casa.size.x + 10, 0)]), Color("6b5a44"))
+			draw_rect(Rect2(casa.position + Vector2(-60, casa.size.y - 34), Vector2(40, 34)), Color("b0392b"))   # depósito de gasóleo
+			draw_string(fuente, casa.position + Vector2(-58, casa.size.y - 14), "GASÓLEO", HORIZONTAL_ALIGNMENT_LEFT, 40, 8, Color.WHITE)
+		_:
+			draw_colored_polygon(PackedVector2Array([casa.position + Vector2(-10, 0), casa.position + Vector2(casa.size.x / 2.0, -40), casa.position + Vector2(casa.size.x + 10, 0)]), Color("5a2e2e"))
+			draw_rect(casa, Color("3b4a6b"))
 	var puerta := Rect2(casa.position + Vector2(80, casa.size.y - 46), Vector2(28, 46))
 	draw_rect(puerta, Color("1b2640"))
 	var dentro := p > 0.25 and p < 0.8 and not fin
@@ -562,8 +962,25 @@ func _escena_busqueda() -> void:
 	var fin: bool = inc.evento == "terminado"
 	var exito: bool = inc.exito
 	var puertas := _aparcados()
+	if _subtipo() == "embalse":
+		# Barca de rescate y burbujas de los buceadores en el embalse
+		var barca := Vector2(380 + sin(_t * 0.6) * 20.0, Y_ACERA - 40)
+		if _hay("bomberos"):
+			draw_colored_polygon(PackedVector2Array([barca + Vector2(-30, 0), barca + Vector2(30, 0), barca + Vector2(22, 10), barca + Vector2(-22, 10)]), Color("e67e22"))
+			_persona(barca + Vector2(-8, 2), "bomberos", "pie", 0.0, 1.0)
+			for k in 4:
+				var f := fmod(_t * 0.9 + k * 0.25, 1.0)
+				draw_circle(barca + Vector2(50 + k * 6.0, 30 - f * 20.0), 2.0 + f * 2.0, Color(1, 1, 1, 0.7 * (1.0 - f)))
+		for k in 3:
+			_persona(Vector2(200 + k * 22.0, Y_ACERA + 4), "civil", "pie", 0.0, 1.0)
+		for i in mini(_gente("ambulancia"), 2):
+			_persona(_entrar(puertas.get("ambulancia", Vector2(150, Y_ACERA + 6)), Vector2(150 + i * 22.0, Y_ACERA + 6)), "ambulancia", "pie", 0.0, 1.0)
+		if fin and exito:
+			_persona(Vector2(290, Y_ACERA + 8), "herido", "tumbado")
+		return
 	# Parque con árboles
-	draw_rect(Rect2(ESCENA.position.x, Y_ACERA - 50, ESCENA.size.x, 50), Color("17402f"))
+	if _ambiente() == "ciudad":
+		draw_rect(Rect2(ESCENA.position.x, Y_ACERA - 50, ESCENA.size.x, 50), Color("17402f"))
 	var arboles := [Vector2(180, Y_ACERA - 6), Vector2(260, Y_ACERA - 14), Vector2(350, Y_ACERA - 4), Vector2(430, Y_ACERA - 12), Vector2(500, Y_ACERA - 6)]
 	for a in arboles:
 		draw_rect(Rect2(a + Vector2(-3, -24), Vector2(6, 24)), Color("5b3a1e"))
@@ -609,6 +1026,23 @@ func _escena_control() -> void:
 		salida["policia"] = (_t_fin - 4.2) * 130.0
 	var puertas := _aparcados(salida)
 	var puerta_pol: Vector2 = puertas.get("policia", Vector2(ESCENA.position.x + 46, Y_SUELO - 4))
+	var sub := _subtipo()
+	if sub in ["fiesta", "bomba"]:
+		_control_especial(sub, p, fin, exito, puertas)
+		return
+	if sub == "trompos" and p < 0.4 and not fin:
+		# El coche haciendo trompos antes de que lo paren
+		var c := Vector2(380, Y_SUELO - 6)
+		var ang := _t * 5.0
+		var pos_c := c + Vector2(cos(ang), sin(ang) * 0.25) * 40.0
+		_vehiculo(pos_c, "sospechoso", 1.0 if cos(ang + PI / 2.0) > 0.0 else -1.0, false)
+		for k in 5:
+			var f := fmod(_t * 0.8 + k * 0.2, 1.0)
+			draw_circle(c + Vector2(cos(ang - k * 0.5), 0.2) * 40.0 + Vector2(0, -f * 20.0), 6.0 + f * 10.0, Color(0.8, 0.8, 0.82, 0.4 * (1.0 - f)))
+		for k in 3:
+			_persona(Vector2(200 + k * 24.0, Y_ACERA + 4), "civil", "saluda", _t * 3.0 + k, 1.0)   # grabando con el móvil
+		_persona(_entrar(puerta_pol, Vector2(280, Y_SUELO - 2)), "policia", "trafico", _t * 3.0, 1.0)
+		return
 	# El coche parado
 	var coche := Vector2(400, Y_SUELO)
 	var se_va := 0.0
@@ -663,6 +1097,54 @@ func _escena_control() -> void:
 		_bocadillo(agente + Vector2(-4, -44), "Sople aquí...")
 	else:
 		_libreta(agente + Vector2(-26, -64), clampf((p - (0.5 if noche else 0.25)) / (0.5 if noche else 0.75), 0.0, 1.0))
+
+
+## Fiesta ruidosa y paquete sospechoso.
+func _control_especial(sub: String, p: float, fin: bool, exito: bool, puertas: Dictionary) -> void:
+	var puerta_pol: Vector2 = puertas.get("policia", Vector2(ESCENA.position.x + 46, Y_SUELO - 4))
+	if sub == "fiesta":
+		var ed := Rect2(320, 90, 170, Y_ACERA - 90)
+		draw_rect(ed, Color("2c3e66"))
+		var sigue := p < 0.6 and not fin
+		for fila in 3:
+			for col in 3:
+				var w := Rect2(ed.position + Vector2(16 + col * 52.0, 14 + fila * 46.0), Vector2(30, 26))
+				var c_luz := Color.from_hsv(fmod(_t * 0.6 + col * 0.3 + fila * 0.2, 1.0), 0.7, 1.0) if sigue and fila == 1 else Color("13213d")
+				draw_rect(w, c_luz)
+		if sigue:
+			for k in 4:
+				var f := fmod(_t * 0.7 + k * 0.25, 1.0)
+				var nota := ed.position + Vector2(40 + k * 30.0, 60 - f * 60.0)
+				draw_circle(nota, 3.0, Color(1, 1, 1, 1.0 - f))
+				draw_line(nota + Vector2(2.5, 0), nota + Vector2(2.5, -11), Color(1, 1, 1, 1.0 - f), 1.5)
+				draw_line(nota + Vector2(2.5, -11), nota + Vector2(7, -8), Color(1, 1, 1, 1.0 - f), 1.5)
+		var portal := ed.position + Vector2(ed.size.x / 2.0, ed.size.y)
+		var agente := _entrar(puerta_pol, portal + Vector2(-30, 0))
+		_persona(agente, "policia", "pie", 0.0, 1.0)
+		if sigue and not _andando(puerta_pol, portal + Vector2(-30, 0)):
+			_bocadillo(agente + Vector2(0, -44), "Bajen la música, por favor")
+			_persona(portal + Vector2(6, 0), "civil", "pie", 0.0, -1.0)
+		elif not sigue:
+			_persona(Vector2(200, Y_ACERA + 4), "civil", "saluda", _t * 2.0, 1.0)   # el vecino agradecido
+		return
+	# Paquete sospechoso: cordón, robot de los TEDAX y gente apartada
+	var paquete := Vector2(400, Y_ACERA + 6)
+	draw_line(Vector2(300, Y_ACERA - 4), Vector2(ESCENA.end.x, Y_ACERA - 4), Color("f1c40f"), 2.0)
+	if not (fin and exito):
+		draw_rect(Rect2(paquete + Vector2(-9, -12), Vector2(18, 12)), Color("6b4a2a"))
+		draw_line(paquete + Vector2(-9, -6), paquete + Vector2(9, -6), Color("d8c690"), 2.0)
+	if _hay("geo"):
+		var k := clampf(p / 0.6, 0.0, 1.0)
+		var robot := Vector2(240, Y_ACERA + 6).lerp(paquete + Vector2(-26, 0), k)
+		draw_rect(Rect2(robot + Vector2(-10, -10), Vector2(20, 8)), Color("2b2f36"))
+		draw_circle(robot + Vector2(-7, 0), 3.0, Color("101010"))
+		draw_circle(robot + Vector2(7, 0), 3.0, Color("101010"))
+		draw_line(robot + Vector2(4, -10), robot + Vector2(16, -20 + sin(_t * 3.0) * 3.0), Color("8a8f99"), 2.0)
+		_persona(Vector2(200, Y_ACERA + 6), "geo", "pie", 0.0, 1.0)
+	for i in mini(_gente("policia"), 3):
+		_persona(_entrar(puerta_pol, Vector2(270 + i * 18.0, Y_SUELO - 2)), "policia", "trafico", _t * 3.0, -1.0)
+	for k in 4:
+		_persona(Vector2(ESCENA.position.x + 30 + k * 18.0, Y_ACERA + 4), "civil", "pie", 0.0, 1.0)
 
 
 ## Libreta de multas en la que se van escribiendo líneas, con el lápiz moviéndose.
@@ -965,7 +1447,7 @@ func _persona(p: Vector2, tipo: String, pose: String = "pie", fase: float = 0.0,
 
 ## Vehículo visto de lado. p = punto del suelo en el centro.
 func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: String = "") -> void:
-	if tipo in ["camuflado", "canina", "vir", "moto_sanitaria", "moto", "pma", "guardia_civil", "ume", "heli_sanitario", "heli_policia"]:
+	if tipo in ["camuflado", "canina", "vir", "moto_sanitaria", "moto", "pma", "guardia_civil", "ume", "heli_sanitario", "heli_policia", "heli_bomberos"]:
 		_vehiculo_especial(p, tipo, mirando, luces)
 		return
 	_elipse(p + Vector2(0, 1), 34.0, 4.0, Color(0, 0, 0, 0.4))
@@ -1042,7 +1524,7 @@ func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: 
 
 ## Vehículos con aspecto propio (0.96)
 func _vehiculo_especial(p: Vector2, tipo: String, mirando: float, luces: bool) -> void:
-	if tipo in ["heli_sanitario", "heli_policia"]:
+	if tipo in ["heli_sanitario", "heli_policia", "heli_bomberos"]:
 		_helicoptero(p, tipo, mirando)
 		return
 	var moto := tipo == "moto" or tipo == "moto_sanitaria"
@@ -1115,7 +1597,7 @@ func _vehiculo_especial(p: Vector2, tipo: String, mirando: float, luces: bool) -
 
 ## Helicóptero posado con el rotor girando despacio.
 func _helicoptero(p: Vector2, tipo: String, mirando: float) -> void:
-	var col := Color("f1c40f") if tipo == "heli_sanitario" else Color("1f4fa8")
+	var col := Color("f1c40f") if tipo == "heli_sanitario" else (Color("d63a2f") if tipo == "heli_bomberos" else Color("1f4fa8"))
 	_elipse(p + Vector2(0, 1), 40.0, 5.0, Color(0, 0, 0, 0.4))
 	draw_set_transform(p, 0.0, Vector2(mirando, 1.0))
 	# patines
@@ -1130,6 +1612,11 @@ func _helicoptero(p: Vector2, tipo: String, mirando: float) -> void:
 	if tipo == "heli_sanitario":
 		draw_rect(Rect2(-8, -22, 10, 3), Color("e74c3c"))
 		draw_rect(Rect2(-4.5, -26, 3, 10), Color("e74c3c"))
+	elif tipo == "heli_bomberos":
+		draw_string(fuente, Vector2(-18, -14), "BOMBEROS", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color.WHITE)
+		# helibalde colgando
+		draw_line(Vector2(0, -6), Vector2(0, 14), Color("2b2f36"), 1.0)
+		draw_rect(Rect2(-5, 14, 10, 8), Color("e67e22"))
 	else:
 		draw_string(fuente, Vector2(-16, -14), "POLICÍA", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color.WHITE)
 	# rotor
@@ -1194,6 +1681,30 @@ func _coche_accidentado(p: Vector2, sin_techo: bool) -> void:
 	draw_line(p + Vector2(18, -15), p + Vector2(28, -6), Color("2d3436"), 2.0)  # capó abollado
 	draw_circle(p + Vector2(-18, -4), 5.5, Color("101418"))
 	draw_circle(p + Vector2(16, -3), 5.0, Color("101418"))
+
+
+func _tractor_volcado(p: Vector2) -> void:
+	_elipse(p + Vector2(0, 1), 40.0, 5.0, Color(0, 0, 0, 0.4))
+	draw_set_transform(p, 0.5, Vector2.ONE)
+	draw_rect(Rect2(-30, -26, 46, 22), Color("2e8b3a"))
+	draw_rect(Rect2(-10, -46, 22, 22), Color("2e8b3a"))
+	draw_rect(Rect2(-6, -42, 14, 12), Color("9cc9ff"))
+	draw_circle(Vector2(-20, -2), 14.0, Color("1b1b1b"))
+	draw_circle(Vector2(-20, -2), 6.0, Color("c0392b"))
+	draw_circle(Vector2(14, 2), 9.0, Color("1b1b1b"))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _escombros(p: Vector2, alto: float, rocas: bool) -> void:
+	var col := Color("7a7068") if rocas else Color("8a7f76")
+	for k in 14:
+		var x := -70.0 + fmod(k * 37.0, 140.0)
+		var y := -fmod(k * 23.0, 40.0) * alto
+		var r := 6.0 + fmod(k * 7.0, 8.0)
+		draw_rect(Rect2(p + Vector2(x - r, y - r), Vector2(r * 2.0, r * 1.4)), col.darkened(fmod(k * 0.13, 0.4)))
+	if not rocas:
+		draw_line(p + Vector2(-60, -30 * alto), p + Vector2(40, -8), Color("5a3a22"), 4.0)   # viga
+		draw_line(p + Vector2(-20, -40 * alto), p + Vector2(60, -20 * alto), Color("5a3a22"), 3.0)
 
 
 func _camilla(p: Vector2, con_paciente: bool) -> void:

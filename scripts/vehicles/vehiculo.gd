@@ -52,6 +52,8 @@ var nivel_medio := 0.0
 var moral_media := 70.0
 var xp_turno := 0             # servicios hechos este turno (experiencia)
 var factor_taller := 1.0
+var mejoras_amb: Array = []   # mejoras de la ambulancia básica (2.0)
+var rect_pueblo := Rect2()
 var pacientes_a_bordo := 0
 var t_radar := 0.0            # coche camuflado: tiempo para la próxima multa de radar
 var estado := "Disponible"   # Disponible, Patrullando, En desplazamiento, Buscando el lugar, En intervención, Traslado al hospital, Regresando, Persecución
@@ -182,6 +184,10 @@ func velocidad_actual() -> float:
 		v *= 1.1
 	if estado == "Traslado al hospital" and habilidades.has("traslado_rapido"):
 		v *= 1.15
+	if mejoras_amb.has("motor"):
+		v *= 1.15
+	if mejoras_amb.has("4x4") and rect_pueblo.size.x > 0.0 and not rect_pueblo.has_point(position):
+		v *= 1.25
 	return v * factor_trafico * factor_taller
 
 
@@ -241,7 +247,7 @@ func _process(delta: float) -> void:
 			if _replanificar <= 0.0 or not en_movimiento:
 				_replanificar = 0.5
 				ir_a(perseguir.siguiente_nodo)
-			if position.distance_to(perseguir.position) < 40.0:
+			if not aereo and position.distance_to(perseguir.position) < 40.0:
 				var objetivo = perseguir
 				perseguir = null
 				detener()
@@ -301,7 +307,7 @@ const COLORES_ESTADO := {
 	"Disponible": Color("2ecc71"), "En desplazamiento": Color("f39c12"),
 	"Buscando el lugar": Color("e67e22"), "En intervención": Color("e74c3c"),
 	"Persecución": Color("a569bd"), "Regresando": Color("5dade2"),
-	"Patrullando": Color("27ae60"), "Traslado al hospital": Color("9b59b6"),
+	"Patrullando": Color("27ae60"), "Averiada": Color("7f8c8d"), "Traslado al hospital": Color("9b59b6"),
 	"Trasladando detenido": Color("8e44ad"), "Reponiendo material": Color("b7950b"),
 }
 

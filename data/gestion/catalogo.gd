@@ -37,6 +37,7 @@ const VEHICULOS := {
 	"ume_anfibio": {"nombre": "UME anfibio y bombas de achique", "servicio": "ume", "velocidad": 46.0, "plazas": 5, "precio": 85000, "bono": "anfibio", "rango": 3, "inicial": 4},
 	# ---- Helicópteros (0.99): vuelan en línea recta; cada salida cuesta combustible
 	"heli_sanitario": {"nombre": "Helicóptero sanitario", "servicio": "ambulancia", "velocidad": 190.0, "plazas": 3, "precio": 150000, "bono": "heli_sanitario", "rango": 2, "inicial": 3, "aereo": true, "base": "helipuerto", "camillas": 1},
+	"heli_bomberos": {"nombre": "Helicóptero de bomberos", "servicio": "bomberos", "velocidad": 180.0, "plazas": 3, "precio": 140000, "bono": "heli_bomberos", "rango": 2, "inicial": 3, "aereo": true, "base": "helipuerto"},
 	"heli_policia": {"nombre": "Helicóptero de policía", "servicio": "policia", "velocidad": 200.0, "plazas": 2, "precio": 130000, "bono": "heli_policia", "rango": 2, "inicial": 2, "aereo": true, "base": "helipuerto"},
 	# ---- Policía Judicial (detectives): investiga las denuncias
 	"judicial": {"nombre": "Policía Judicial (detectives)", "servicio": "judicial", "velocidad": 70.0, "plazas": 3, "precio": 40000, "bono": "detectives", "rango": 1, "inicial": 2},
@@ -50,9 +51,18 @@ const NOMBRE_CORTO := {
 	"camuflado": "Camuflado", "canina": "Canina", "vir": "VIR", "moto_sanitaria": "Moto sanitaria",
 	"pma": "PMA", "pc_vehiculo": "Protección Civil",
 	"geo_blindado": "Blindado GEO", "geo_antidisturbios": "Antidisturbios", "geo_mando": "Mando GEO",
-	"geo_tedax": "TEDAX", "heli_sanitario": "Helicóptero sanitario", "heli_policia": "Helicóptero policía", "ume_nrbq": "UME NRBQ", "ume_forestal": "UME Forestal",
+	"geo_tedax": "TEDAX", "heli_sanitario": "Helicóptero sanitario", "heli_policia": "Helicóptero policía", "heli_bomberos": "Helicóptero bomberos", "ume_nrbq": "UME NRBQ", "ume_forestal": "UME Forestal",
 	"ume_rescate": "UME Rescate", "ume_anfibio": "UME Anfibio", "judicial": "Detectives",
 }
+
+## Mejoras de la ambulancia básica (2.0)
+const MEJORAS_AMBULANCIA := {
+	"motor": {"nombre": "Motor nuevo", "precio": 6000, "ayuda": "Va un 15 % más rápida"},
+	"tecnico": {"nombre": "Técnico con formación avanzada", "precio": 5000, "ayuda": "Atiende antes y baja el riesgo de muerte"},
+	"equipamiento": {"nombre": "Equipamiento avanzado (monitor, oxígeno, inmovilización)", "precio": 7000, "ayuda": "Los pacientes aguantan más y hay menos muertes"},
+	"4x4": {"nombre": "Tracción 4x4", "precio": 6500, "ayuda": "Un 25 % más rápida fuera del pueblo (fincas, caminos, monte)"},
+}
+const PRECIO_PASAR_A_SVA := 25000
 
 ## PLANTILLA (1.1)
 const XP_NIVEL := [0, 8, 20]          # servicios para ser experto / veterano
