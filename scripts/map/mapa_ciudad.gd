@@ -44,6 +44,9 @@ const ICONOS := {
 	"restaurante": ["R", Color("f2c94c")], "bar": ["b", Color("f2c94c")],
 	"deporte": ["D", Color("56cfe1")], "comercio": ["c", Color("f2c94c")],
 	"edificio": ["E", Color("aab7c4")],
+	"finca": ["Fi", Color("c8a165")], "monte": ["M", Color("5fbf77")], "embalse": ["Em", Color("5aa9ff")],
+	"cantera": ["Ca", Color("b0a090")], "pedania": ["+", Color("2ecc71")], "helipuerto": ["H", Color("ffffff")],
+	"carretera": ["!", Color("ffb347")],
 }
 
 var datos: Dictionary = {}

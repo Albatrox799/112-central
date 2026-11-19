@@ -61,6 +61,12 @@ var esperando_ambulancia := false
 var refuerzos_avisados: Dictionary = {}   # servicio -> unidades ya pedidas por radio
 var escapado := false
 var caso_id := ""               # investigación de la Policía Judicial a la que pertenece
+# 1.0: heridos esperando ambulancia o detenidos esperando furgón
+var recogida := ""              # "" , "heridos" o "detenidos"
+var pendientes := 0             # heridos o detenidos que quedan por llevar
+var cuidador = null             # unidad que se queda con ellos
+var origen := ""                # aviso del que vienen
+var t_custodia := 0.0
 
 
 ## Unidades que siguen de verdad en el lugar.

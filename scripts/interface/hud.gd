@@ -175,7 +175,7 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 0.98.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 1.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
 
 
 # ---------------------------------------------------------------- PANTALLA DE CARGA
@@ -564,9 +564,31 @@ func _actualizar_vista_lugar() -> void:
 	vista_lugar.visible = mostrar
 
 
+var _denuncias_pend := 0
+var _calabozo := 0
+var _calabozo_max := 6
+
+
 func set_comisaria(pendientes: int) -> void:
-	etiqueta_comisaria.visible = pendientes > 0
-	etiqueta_comisaria.text = "COMISARÍA: %d denuncia%s (cruceta izquierda)" % [pendientes, "" if pendientes == 1 else "s"]
+	_denuncias_pend = pendientes
+	_texto_comisaria()
+
+
+func set_calabozo(n: int, maximo: int) -> void:
+	_calabozo = n
+	_calabozo_max = maximo
+	_texto_comisaria()
+
+
+func _texto_comisaria() -> void:
+	var lleno := _calabozo >= _calabozo_max - 1
+	etiqueta_comisaria.visible = _denuncias_pend > 0 or lleno
+	var t := ""
+	if _denuncias_pend > 0:
+		t = "COMISARÍA: %d denuncia%s" % [_denuncias_pend, "" if _denuncias_pend == 1 else "s"]
+	if lleno:
+		t += ("" if t == "" else " · ") + "CALABOZO %d/%d" % [_calabozo, _calabozo_max]
+	etiqueta_comisaria.text = t + " (cruceta izquierda)"
 
 
 func set_clima(texto: String, color: Color) -> void:

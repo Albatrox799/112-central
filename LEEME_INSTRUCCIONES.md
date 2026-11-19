@@ -28,6 +28,33 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 1.1
+
+- **Plantilla de personal** (en Equipos → Plantilla): cada persona tiene nombre, servicio, experiencia, nivel, habilidades y moral, y puede estar en un vehículo, en la **reserva** o de baja. Las partidas guardadas pasan su personal a la plantilla automáticamente.
+- **Reserva:** contrata gente sin comprar vehículos (la reserva cobra el 60 % del sueldo). Cuando alguien se da de baja, trae a uno de la reserva desde la ficha del vehículo para que no se quede parado. Al comprar un vehículo, primero se usa gente de la reserva.
+- **Experiencia y niveles:** cada servicio da experiencia. Con 8 servicios se asciende a **Experto/a** y con 20 a **Veterano/a**, y en cada ascenso se aprende una habilidad. Los ascensos salen en el resumen del turno. Las tripulaciones con experiencia trabajan más rápido.
+- **Habilidades:** reanimación avanzada (menos muertes), traslado rápido, triaje, negociador, conducción evasiva, interrogador, rescate en altura, experto en incendios, primeros auxilios, ordenación del tráfico, tirador, especialista NRBQ, rescate en catástrofes, olfato y paciencia (detectives)… También se aprenden con **cursos** (2.500 €).
+- **Moral:** baja después de los avisos con fallecidos y con las bajas, y sube cada turno. Con la moral baja trabajan peor. Un **psicólogo de emergencias** (300 € por turno) hace que se recupere mucho antes.
+- **Mejoras de las bases** (en Equipos): gimnasio y sala de descanso, taller propio (vehículos un 5 % más rápidos), ampliación del calabozo (12 plazas) y aula de formación (cursos a mitad de precio).
+
+## Novedades de la versión 1.0
+
+- **Capacidad de las ambulancias:** la básica lleva 1 herido, la de soporte vital avanzado (SVA) 2 y el helicóptero sanitario 1. El VIR, la moto sanitaria, el PMA, la policía o los bomberos no trasladan.
+- **Heridos que esperan:** si al terminar no caben todos los heridos, una unidad se queda con ellos (mejor un VIR o una moto sanitaria) y aparece un aviso **«Traslado pendiente»**. Manda más ambulancias, o las mismas cuando vuelvan del hospital. Si tardan demasiado, un herido puede morir.
+- **A veces hay más heridos** de los que se esperaban: la unidad lo avisa por radio y pide otra ambulancia.
+- **Detenidos:** un coche lleva 2, el furgón 4, el blindado del GEO 4 y el furgón antidisturbios 8; la moto y el helicóptero, ninguno. En las peleas grandes puede haber entre 5 y 10 detenidos.
+- **Custodia:** si no caben todos, la unidad que menos puede llevar se queda vigilándolos y aparece un aviso **«Recogida de detenidos»**. El resto queda libre. Manda un furgón o más coches (o el mismo cuando vuelva del calabozo). Mientras esperan, alguno puede escaparse, sobre todo si son muchos.
+- **Calabozo con 6 plazas:** si se llena, los detenidos que no caben van directos al centro penitenciario. Desde la comisaría (cruceta izquierda) puedes mandar un coche o furgón libre a llevar presos a la cárcel. Al empezar cada turno, el juzgado se lleva a la mitad. Arriba aparece «CALABOZO 5/6» cuando está casi lleno.
+
+## Novedades de la versión 0.99
+
+- **Mapa ampliado:** alrededor del pueblo real está ahora el resto del término municipal, inventado para el juego: carreteras (de Ciudad Real, de Los Pozuelos, del Monte, de los Molinos, de la Vega, del Embalse), caminos, diez fincas y granjas, la pedanía de **Los Pozuelos**, el **Monte de San Isidro** con su área recreativa, ermita y mirador, el **Embalse del Vado**, la **Cantera de Las Peñas** y un área de descanso. Se puede alejar mucho más la cámara.
+- **Helicópteros** (en la tienda desde el rango «Operador/a veterano/a»), con base en el **Helipuerto** junto a la carretera de Ciudad Real:
+  - **Helicóptero sanitario:** vuela en línea recta, atiende y traslada al hospital en un momento.
+  - **Helicóptero de policía:** busca personas y sospechosos desde el aire (las búsquedas van muchísimo más rápido) y guía a las patrullas, pero no puede detener: en peleas y robos hace falta una patrulla en tierra.
+  - Tardan 10 segundos en despegar y cada salida cuesta 350 € de combustible: compensan en avisos lejanos.
+- **Avisos lejos del pueblo:** tractor volcado, coche salido de la vía, senderista con dolor en el pecho en el monte, incendio de un campo de cereal, robo de gasóleo en una finca, bañista desaparecido en el embalse, accidente en la cantera y un niño con convulsiones en Los Pozuelos. Algunas llamadas normales también pueden venir de la pedanía.
+
 ## Versión 0.98.1 · Arreglo
 
 - Arreglado: con la 0.98 no aparecían las unidades en el mapa (un dato repetido en la lista de colores de los vehículos impedía cargarlos).

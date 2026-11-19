@@ -965,7 +965,7 @@ func _persona(p: Vector2, tipo: String, pose: String = "pie", fase: float = 0.0,
 
 ## Vehículo visto de lado. p = punto del suelo en el centro.
 func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: String = "") -> void:
-	if tipo in ["camuflado", "canina", "vir", "moto_sanitaria", "moto", "pma", "guardia_civil", "ume"]:
+	if tipo in ["camuflado", "canina", "vir", "moto_sanitaria", "moto", "pma", "guardia_civil", "ume", "heli_sanitario", "heli_policia"]:
 		_vehiculo_especial(p, tipo, mirando, luces)
 		return
 	_elipse(p + Vector2(0, 1), 34.0, 4.0, Color(0, 0, 0, 0.4))
@@ -1042,6 +1042,9 @@ func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: 
 
 ## Vehículos con aspecto propio (0.96)
 func _vehiculo_especial(p: Vector2, tipo: String, mirando: float, luces: bool) -> void:
+	if tipo in ["heli_sanitario", "heli_policia"]:
+		_helicoptero(p, tipo, mirando)
+		return
 	var moto := tipo == "moto" or tipo == "moto_sanitaria"
 	_elipse(p + Vector2(0, 1), 16.0 if moto else 34.0, 4.0, Color(0, 0, 0, 0.4))
 	draw_set_transform(p, 0.0, Vector2(mirando, 1.0))
@@ -1107,6 +1110,32 @@ func _vehiculo_especial(p: Vector2, tipo: String, mirando: float, luces: bool) -
 		var r := 4.5 if moto else 5.5
 		draw_circle(Vector2(x, -5), r, rueda)
 		draw_circle(Vector2(x, -5), r * 0.4, Color("5a6170"))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## Helicóptero posado con el rotor girando despacio.
+func _helicoptero(p: Vector2, tipo: String, mirando: float) -> void:
+	var col := Color("f1c40f") if tipo == "heli_sanitario" else Color("1f4fa8")
+	_elipse(p + Vector2(0, 1), 40.0, 5.0, Color(0, 0, 0, 0.4))
+	draw_set_transform(p, 0.0, Vector2(mirando, 1.0))
+	# patines
+	draw_line(Vector2(-22, -2), Vector2(18, -2), Color("2b2f36"), 3.0)
+	draw_line(Vector2(-14, -2), Vector2(-14, -8), Color("2b2f36"), 2.0)
+	draw_line(Vector2(10, -2), Vector2(10, -8), Color("2b2f36"), 2.0)
+	# cabina y cola
+	_elipse(Vector2(0, -18), 22.0, 11.0, col)
+	draw_rect(Rect2(-48, -22, 30, 6), col)
+	draw_rect(Rect2(-52, -32, 6, 14), col)
+	_elipse(Vector2(10, -20), 9.0, 6.0, Color("9cc9ff"))
+	if tipo == "heli_sanitario":
+		draw_rect(Rect2(-8, -22, 10, 3), Color("e74c3c"))
+		draw_rect(Rect2(-4.5, -26, 3, 10), Color("e74c3c"))
+	else:
+		draw_string(fuente, Vector2(-16, -14), "POLICÍA", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color.WHITE)
+	# rotor
+	draw_line(Vector2(0, -29), Vector2(0, -34), Color("2b2f36"), 2.0)
+	var ancho := 46.0 * absf(cos(_t * 9.0))
+	draw_line(Vector2(-ancho, -34), Vector2(ancho, -34), Color(0.1, 0.1, 0.12, 0.8), 2.5)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 

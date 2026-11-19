@@ -102,10 +102,15 @@ func _reproductor(nombre: String, volumen: float) -> AudioStreamPlayer:
 func configurar(p_datos: Dictionary) -> void:
 	datos = p_datos
 	_farolas.clear()
+	var pr: Array = datos.get("pueblo_rect", [])
+	var rect_pueblo: Rect2 = Rect2(float(pr[0]), float(pr[1]), float(pr[2]), float(pr[3])).grow(150.0) if pr.size() == 4 else Rect2()
 	for via in datos.get("vias", []):
 		if via["tipo"] in ["path", "footway", "cycleway", "track", "service"]:
 			continue
 		var lista: Array = via["puntos"]
+		# En el campo no hay farolas (salvo en la pedanía)
+		if pr.size() == 4 and via["tipo"] != "residential" and not rect_pueblo.has_point(Vector2(float(lista[0]), float(lista[1]))):
+			continue
 		var resto := 0.0
 		for i in range(1, lista.size() / 2):
 			var a := Vector2(float(lista[(i - 1) * 2]), float(lista[(i - 1) * 2 + 1]))

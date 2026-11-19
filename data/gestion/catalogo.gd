@@ -13,9 +13,9 @@ const TURNOS_BAJA := 2               # turnos que un herido está de baja
 const VEHICULOS := {
 	"patrulla": {"nombre": "Coche patrulla", "servicio": "policia", "velocidad": 75.0, "plazas": 2, "precio": 18000, "bono": ""},
 	"moto": {"nombre": "Moto de policía", "servicio": "policia", "velocidad": 92.0, "plazas": 1, "precio": 9000, "bono": "rapida"},
-	"furgon": {"nombre": "Furgón policial", "servicio": "policia", "velocidad": 62.0, "plazas": 4, "precio": 30000, "bono": "detenidos"},
-	"ambulancia_b": {"nombre": "Ambulancia básica", "servicio": "ambulancia", "velocidad": 55.0, "plazas": 2, "precio": 40000, "bono": ""},
-	"ambulancia_sva": {"nombre": "Ambulancia de soporte vital avanzado", "servicio": "ambulancia", "velocidad": 60.0, "plazas": 3, "precio": 65000, "bono": "medico"},
+	"furgon": {"nombre": "Furgón policial (4 detenidos)", "servicio": "policia", "velocidad": 62.0, "plazas": 4, "precio": 30000, "bono": "detenidos"},
+	"ambulancia_b": {"nombre": "Ambulancia básica (1 herido)", "servicio": "ambulancia", "velocidad": 55.0, "plazas": 2, "precio": 40000, "bono": "", "camillas": 1},
+	"ambulancia_sva": {"nombre": "Ambulancia de soporte vital avanzado (2 heridos)", "servicio": "ambulancia", "velocidad": 60.0, "plazas": 3, "precio": 65000, "bono": "medico", "camillas": 2},
 	"autobomba": {"nombre": "Autobomba", "servicio": "bomberos", "velocidad": 45.0, "plazas": 4, "precio": 120000, "bono": ""},
 	"escalera": {"nombre": "Camión escalera", "servicio": "bomberos", "velocidad": 40.0, "plazas": 3, "precio": 150000, "bono": "altura"},
 	"rescate": {"nombre": "Unidad de rescate", "servicio": "bomberos", "velocidad": 55.0, "plazas": 3, "precio": 90000, "bono": "rescate"},
@@ -35,6 +35,9 @@ const VEHICULOS := {
 	"ume_forestal": {"nombre": "UME autobomba forestal pesada", "servicio": "ume", "velocidad": 48.0, "plazas": 5, "precio": 100000, "bono": "forestal", "rango": 3, "inicial": 4},
 	"ume_rescate": {"nombre": "UME rescate en derrumbes", "servicio": "ume", "velocidad": 52.0, "plazas": 6, "precio": 95000, "bono": "derrumbes", "rango": 3, "inicial": 4},
 	"ume_anfibio": {"nombre": "UME anfibio y bombas de achique", "servicio": "ume", "velocidad": 46.0, "plazas": 5, "precio": 85000, "bono": "anfibio", "rango": 3, "inicial": 4},
+	# ---- Helicópteros (0.99): vuelan en línea recta; cada salida cuesta combustible
+	"heli_sanitario": {"nombre": "Helicóptero sanitario", "servicio": "ambulancia", "velocidad": 190.0, "plazas": 3, "precio": 150000, "bono": "heli_sanitario", "rango": 2, "inicial": 3, "aereo": true, "base": "helipuerto", "camillas": 1},
+	"heli_policia": {"nombre": "Helicóptero de policía", "servicio": "policia", "velocidad": 200.0, "plazas": 2, "precio": 130000, "bono": "heli_policia", "rango": 2, "inicial": 2, "aereo": true, "base": "helipuerto"},
 	# ---- Policía Judicial (detectives): investiga las denuncias
 	"judicial": {"nombre": "Policía Judicial (detectives)", "servicio": "judicial", "velocidad": 70.0, "plazas": 3, "precio": 40000, "bono": "detectives", "rango": 1, "inicial": 2},
 }
@@ -47,9 +50,39 @@ const NOMBRE_CORTO := {
 	"camuflado": "Camuflado", "canina": "Canina", "vir": "VIR", "moto_sanitaria": "Moto sanitaria",
 	"pma": "PMA", "pc_vehiculo": "Protección Civil",
 	"geo_blindado": "Blindado GEO", "geo_antidisturbios": "Antidisturbios", "geo_mando": "Mando GEO",
-	"geo_tedax": "TEDAX", "ume_nrbq": "UME NRBQ", "ume_forestal": "UME Forestal",
+	"geo_tedax": "TEDAX", "heli_sanitario": "Helicóptero sanitario", "heli_policia": "Helicóptero policía", "ume_nrbq": "UME NRBQ", "ume_forestal": "UME Forestal",
 	"ume_rescate": "UME Rescate", "ume_anfibio": "UME Anfibio", "judicial": "Detectives",
 }
+
+## PLANTILLA (1.1)
+const XP_NIVEL := [0, 8, 20]          # servicios para ser experto / veterano
+const NOMBRES_NIVEL := ["Novato/a", "Experto/a", "Veterano/a"]
+const FACTOR_SUELDO_RESERVA := 0.6     # la reserva cobra el 60 %
+const PRECIO_CURSO := 2500             # curso que enseña una habilidad a una persona
+const PRECIO_PSICOLOGO := 300          # por turno
+## Habilidades que se aprenden al subir de nivel (o con un curso)
+const HABILIDADES := {
+	"ambulancia": {"reanimacion": "Reanimación avanzada: menos riesgo de muerte", "traslado_rapido": "Traslado rápido: llegan antes al hospital", "triaje": "Triaje: trabajan más rápido con varios heridos"},
+	"policia": {"negociador": "Negociador: mejor con peleas, armados y rehenes", "conduccion": "Conducción evasiva: van más rápido en emergencia", "interrogador": "Interrogador: avanzan más rápido en casos y controles"},
+	"bomberos": {"altura": "Rescate en altura y excarcelación: rescates más rápidos", "forestal": "Experto en incendios: apagan antes los fuegos grandes", "conduccion": "Conducción de emergencia: van más rápido"},
+	"proteccion_civil": {"primeros_auxilios": "Primeros auxilios: los heridos aguantan más", "trafico": "Ordenación del tráfico: el resto trabaja más rápido"},
+	"geo": {"negociador": "Negociador: mejor con armados y rehenes", "tirador": "Tirador de precisión: menos riesgo en asaltos", "conduccion": "Conducción evasiva"},
+	"ume": {"rescate": "Rescate en catástrofes: más rápidos en derrumbes y riadas", "nrbq": "Especialista NRBQ: más rápidos con químicos", "forestal": "Experto forestal"},
+	"judicial": {"olfato": "Olfato: más rápidos en cada paso de un caso", "interrogador": "Interrogador: sacan más de los testigos", "paciencia": "Paciencia: vigilancias más cortas"},
+}
+## Mejoras de las bases
+const MEJORAS := {
+	"gimnasio": {"nombre": "Gimnasio y sala de descanso", "precio": 12000, "ayuda": "El cansancio baja el doble de rápido en la base y la moral sube más cada turno"},
+	"taller": {"nombre": "Taller propio", "precio": 15000, "ayuda": "Vehículos bien puestos a punto: todos van un 5 % más rápido"},
+	"calabozo": {"nombre": "Ampliación del calabozo", "precio": 10000, "ayuda": "El calabozo pasa de 6 a 12 plazas"},
+	"aula": {"nombre": "Aula de formación", "precio": 9000, "ayuda": "Los cursos cuestan la mitad"},
+}
+
+## Plazas del calabozo de la comisaría (si se llena, hay que llevar presos a la cárcel)
+const PLAZAS_CALABOZO := 6
+
+## Combustible de cada salida de un helicóptero
+const COSTE_VUELO := 350
 
 ## Sueldo por persona y turno de los servicios del Estado (más barato de mantener)
 const SUELDO_ESPECIAL := {"geo": 40, "ume": 40, "judicial": 60}

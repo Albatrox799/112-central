@@ -46,6 +46,13 @@ var formacion := 0            # cursos de formación (0-2): trabajan más rápid
 var externo := false          # Guardia Civil o UME: vienen de fuera y se van al terminar
 var tripulacion: Array = []   # nombres del personal
 var detenidos_a_bordo := 0    # detenidos que lleva al calabozo
+var camillas := 0             # heridos que puede trasladar a la vez (1.0)
+var habilidades: Array = []   # de su tripulación (1.1)
+var nivel_medio := 0.0
+var moral_media := 70.0
+var xp_turno := 0             # servicios hechos este turno (experiencia)
+var factor_taller := 1.0
+var pacientes_a_bordo := 0
 var t_radar := 0.0            # coche camuflado: tiempo para la próxima multa de radar
 var estado := "Disponible"   # Disponible, Patrullando, En desplazamiento, Buscando el lugar, En intervención, Traslado al hospital, Regresando, Persecución
 var fase := ""               # uso interno de la central
@@ -110,6 +117,12 @@ func disponible() -> bool:
 	return estado == "Regresando" and servicios_seguidos < limite_seguidos()
 
 
+# Helicópteros (0.99): vuelan en línea recta y tardan un poco en despegar
+var aereo := false
+var espera_despegue := 0.0
+const DESPEGUE := 10.0
+
+
 func colocar_en(nodo: int) -> void:
 	siguiente_nodo = nodo
 	ultimo_nodo = nodo
@@ -120,6 +133,12 @@ func colocar_en(nodo: int) -> void:
 
 ## Calcula la ruta por las calles hasta el cruce indicado y empieza a moverse.
 func ir_a(destino: int) -> void:
+	if aereo:
+		ruta.clear()
+		if destino != siguiente_nodo or position.distance_to(red.pos(destino)) > 1.0:
+			ruta.append(destino)
+		en_movimiento = not ruta.is_empty()
+		return
 	var camino := red.ruta(siguiente_nodo, destino)
 	ruta.clear()
 	for n in camino:
@@ -159,11 +178,18 @@ func velocidad_actual() -> float:
 		v *= FACTOR_PATRULLA
 	else:
 		v *= FACTOR_SIN_EMERGENCIA
-	return v * factor_trafico
+	if en_emergencia and habilidades.has("conduccion"):
+		v *= 1.1
+	if estado == "Traslado al hospital" and habilidades.has("traslado_rapido"):
+		v *= 1.15
+	return v * factor_trafico * factor_taller
 
 
 ## Segundos reales que tardaría en llegar a un cruce yendo en emergencia.
 func tiempo_estimado(destino: int) -> float:
+	if aereo:
+		var espera := DESPEGUE if not en_movimiento else 0.0
+		return position.distance_to(red.pos(destino)) / (velocidad * FACTOR_SIRENAS) + espera
 	var camino := red.ruta(siguiente_nodo, destino)
 	var dist := position.distance_to(red.pos(siguiente_nodo)) + red.longitud_ruta(camino)
 	var f := FACTOR_SIRENAS if servicio != "sospechoso" else 1.0
@@ -220,6 +246,10 @@ func _process(delta: float) -> void:
 				perseguir = null
 				detener()
 				interceptado.emit(self, objetivo)
+	if espera_despegue > 0.0:
+		espera_despegue -= delta
+		queue_redraw()
+		return
 	if en_movimiento:
 		_avanzar(delta)
 	queue_redraw()
@@ -232,7 +262,7 @@ func _avanzar(delta: float) -> void:
 		var nodo_objetivo: int = ruta[0]
 		siguiente_nodo = nodo_objetivo
 		var objetivo := red.pos(nodo_objetivo)
-		var vel := base * red.factor_tramo(ultimo_nodo, nodo_objetivo)
+		var vel := base if aereo else base * red.factor_tramo(ultimo_nodo, nodo_objetivo)
 		var d := position.distance_to(objetivo)
 		if d > 0.5:
 			direccion = lerp_angle(direccion, (objetivo - position).angle(), 0.35)
@@ -306,6 +336,14 @@ func _draw() -> void:
 			draw_rect(Rect2(0, -47, 14, 4), Color("2f6bff"))
 	elif parpadeo:
 		draw_rect(placa.grow(3.0), Color("ff4d6d"), false, 2.0)
+	if aereo:
+		# Rotor girando encima de la placa (más rápido si está en marcha)
+		var giro := _t * (18.0 if en_movimiento or espera_despegue > 0.0 else 2.0)
+		var largo := 26.0
+		draw_line(Vector2(0, -26) + Vector2.from_angle(giro) * largo, Vector2(0, -26) - Vector2.from_angle(giro) * largo, Color(1, 1, 1, 0.8), 2.0)
+		draw_line(Vector2(0, -26) + Vector2.from_angle(giro + PI / 2) * largo, Vector2(0, -26) - Vector2.from_angle(giro + PI / 2) * largo, Color(1, 1, 1, 0.6), 2.0)
+		if espera_despegue > 0.0:
+			draw_string(f, Vector2(-40, 16), "Despegando…", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, Color.WHITE)
 	if id_unidad != "":
 		draw_string_outline(f, Vector2(-90, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, 4, Color("0a1430"))
 		draw_string(f, Vector2(-90, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color.WHITE)
@@ -316,6 +354,14 @@ func _dibujar_silueta(c: Vector2, col: Color) -> void:
 	var esp := -1.0 if cos(direccion) < -0.2 else 1.0   # se da la vuelta si va hacia la izquierda
 	var sx := Vector2(esp, 1.0)
 	draw_set_transform(c, 0.0, sx)
+	if aereo:
+		# Silueta de helicóptero
+		draw_circle(Vector2(-3, 0), 6.0, col)
+		draw_rect(Rect2(-3, -2, 14, 3), col)
+		draw_line(Vector2(11, -4), Vector2(11, 3), col, 2.0)
+		draw_line(Vector2(-8, 7), Vector2(4, 7), col, 1.5)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	match servicio:
 		"bomberos":
 			draw_rect(Rect2(-14, -6, 28, 10), col)

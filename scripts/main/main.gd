@@ -51,7 +51,7 @@ const COLOR_RADIO_PC := Color("ffb15c")
 const DESC_BONO := {
 	"rapida": "Muy rápida, pero no puede llevar detenidos.",
 	"detenidos": "Lleva hasta 4 detenidos al calabozo.",
-	"medico": "Con médico: estabiliza antes a los pacientes graves.",
+	"medico": "Con médico: estabiliza antes a los pacientes graves y lleva 2 heridos a la vez.",
 	"altura": "Escalera para rescates en altura.",
 	"rescate": "Excarcelación y rescates complicados.",
 	"apoyo": "Se queda ayudando en cualquier emergencia: todo va más rápido.",
@@ -69,6 +69,8 @@ const DESC_BONO := {
 	"derrumbes": "Perros y cámaras para buscar víctimas entre escombros.",
 	"anfibio": "Rescate en riadas e inundaciones, con bombas de achique.",
 	"detectives": "Investigan las denuncias paso a paso hasta detener al culpable.",
+	"heli_sanitario": "Vuela en línea recta: ideal para avisos en el campo, el monte o la pedanía. Traslada al hospital en un momento. 350 € de combustible por salida.",
+	"heli_policia": "Vuela en línea recta: busca personas y sospechosos desde el aire y guía a las patrullas (no detiene). 350 € de combustible por salida.",
 }
 const Pueblo = preload("res://data/pueblo/pueblo.gd")
 const Casos = preload("res://data/pueblo/casos.gd")
@@ -138,6 +140,7 @@ var llamada_rel_inc = null
 var todas_llamadas: Array = []       # las de siempre y las nuevas (0.97)
 var todas_historias: Array = []
 var llamadas_turno: Array = []       # ids que ya han sonado este turno (no se repiten)
+var subidas_nivel: Array = []        # ascensos del personal en este turno (1.1)
 var llamada_linea := "movil"         # movil (AML, zona) o fijo (dirección del abonado)
 var llamada_desvio := Vector2.ZERO   # dónde cae el centro de la zona aproximada
 var llamada_coletillas: Array = []
@@ -189,7 +192,7 @@ func _ready() -> void:
 	datos_mapa = _cargar_mapa()
 	red.cargar(datos_mapa)
 	tamano_mapa = Vector2(float(datos_mapa["tamano"][0]), float(datos_mapa["tamano"][1]))
-	nodo_salida = red.nodo_mas_al_oeste()
+	nodo_salida = int(datos_mapa.get("salida", red.nodo_mas_al_oeste()))
 	_anadir_lugares_virtuales()
 	todas_llamadas = DatosLlamadas.LLAMADAS.duplicate()
 	todas_llamadas.append_array(LlamadasExtra.construir())
@@ -247,6 +250,12 @@ func _ready() -> void:
 	var n_ume := _nodo_extremo(Vector2(-0.4, 0.9))
 	if n_ume == n_geo:
 		n_ume = _nodo_extremo(Vector2(0.0, 1.0))
+	# Helipuerto (0.99), a las afueras junto a la carretera de Ciudad Real
+	var n_heli := n_geo
+	for l in datos_mapa.get("lugares", []):
+		if l.get("tipo", "") == "helipuerto":
+			n_heli = int(l["nodo"])
+	bases["helipuerto"] = n_heli
 	bases["geo"] = n_geo
 	bases["ume"] = n_ume
 	mapa.anadir_base("Base de la Unidad de Intervención Especial (GEO)", red.pos(n_geo) + Vector2(40, 30), COLOR_SERVICIO["geo"], "E")
@@ -292,7 +301,7 @@ func _cargar_mapa() -> Dictionary:
 func _nodo_extremo(dir: Vector2) -> int:
 	var mejor := 0
 	var valor := -INF
-	for i in red.astar.get_point_count():
+	for i in int(datos_mapa.get("nodos_pueblo", red.astar.get_point_count())):
 		if red.grado(i) < 2:
 			continue
 		var v := red.pos(i).dot(dir.normalized())
@@ -304,8 +313,11 @@ func _nodo_extremo(dir: Vector2) -> int:
 
 func _anadir_lugares_virtuales() -> void:
 	var n := 0
+	var zonas_pueblo := int(datos_mapa.get("zonas_pueblo", 99999))
+	var iz := -1
 	for z in datos_mapa.get("zonas", []):
-		if z.get("tipo", "") != "industrial":
+		iz += 1
+		if z.get("tipo", "") != "industrial" or iz >= zonas_pueblo:
 			continue
 		var pts: Array = z["puntos"]
 		var c := Vector2.ZERO
@@ -316,7 +328,10 @@ func _anadir_lugares_virtuales() -> void:
 		n += 1
 		datos_mapa["lugares"].append({"nombre": "el polígono industrial" if n == 1 else "el polígono industrial (zona %d)" % n,
 			"tipo": "industrial", "x": c.x, "y": c.y, "calle": red.calle_de_nodo(nodo), "nodo": nodo})
-	# Monte de San Isidro: al noreste del pueblo, pasada La Lobera
+	# Monte de San Isidro: ya viene en el mapa ampliado (0.99)
+	for l in datos_mapa["lugares"]:
+		if l.get("tipo", "") == "monte":
+			return
 	var mejor := 0
 	var puntos := -INF
 	for i in red.astar.get_point_count():
@@ -415,11 +430,15 @@ func _construir_flota() -> void:
 		v.formacion = int(u.get("formacion", 0))
 		_completar_tripulacion(u)
 		v.tripulacion = u["nombres"].duplicate()
+		_datos_tripulacion(v, i)
+		v.factor_taller = 1.05 if _tiene_mejora("taller") else 1.0
 		v.indice_flota = i
+		v.aereo = bool(datos.get("aereo", false))
+		v.camillas = int(datos.get("camillas", 0))
 		var nodo: int = bases.get(u["base"], bases["policia"])
 		v.nodo_base = nodo
 		v.zona_radio = 0.0
-		if sv == "policia":
+		if sv == "policia" and not v.aereo:
 			# Las patrullas se reparten entre dos zonas de Miguelturra
 			var zona_nodo: int = bases["policia_zona1"] if n_policia % 2 == 0 else bases["policia_zona2"]
 			v.zona_centro = red.pos(zona_nodo)
@@ -452,6 +471,25 @@ func _sincronizar_flota() -> void:
 	for v in vehiculos:
 		if v.indice_flota >= 0 and v.indice_flota < partida["flota"].size():
 			partida["flota"][v.indice_flota]["heridos"] = v.heridos.duplicate()
+			# Las bajas nuevas del turno pasan a personas concretas
+			var de_baja := 0
+			var sanos: Array = []
+			for p in _plantilla():
+				if int(p["vehiculo"]) == v.indice_flota:
+					if int(p["baja"]) > 0:
+						de_baja += 1
+					else:
+						sanos.append(p)
+			var nuevas: int = v.heridos.size() - de_baja
+			sanos.shuffle()
+			for k in mini(nuevas, sanos.size()):
+				sanos[k]["baja"] = Catalogo.TURNOS_BAJA
+				sanos[k]["moral"] = maxi(int(sanos[k]["moral"]) - 10, 0)
+			# Experiencia del turno
+			for p in _plantilla():
+				if int(p["vehiculo"]) == v.indice_flota and int(p["baja"]) == 0 and v.xp_turno > 0:
+					_ganar_xp(p, v.xp_turno)
+			v.xp_turno = 0
 
 
 ## Ejecuta una acción dentro de X segundos de juego (se detiene en pausa).
@@ -473,7 +511,7 @@ func _partida_nueva() -> Dictionary:
 		"dinero": Catalogo.DINERO_INICIAL, "flota": Catalogo.FLOTA_INICIAL.duplicate(true),
 		"vistas": [], "reputacion": 50.0, "puntos": 0, "logros": [], "historial": [], "arcos": {},
 		"evento_dia": {}, "eventos_vistos": [], "denuncias_tramitadas": 0, "pc_regalado": false, "detenidos_total": 0,
-		"casos": [], "contador_casos": 0}
+		"casos": [], "contador_casos": 0, "mapa_ampliado": true, "calabozo": 0, "plantilla": [], "mejoras": [], "psicologo": false}
 
 
 func _cargar_partida() -> void:
@@ -482,6 +520,14 @@ func _cargar_partida() -> void:
 	if cfg.load(RUTA_PARTIDA) == OK:
 		for k in partida:
 			partida[k] = cfg.get_value("partida", k, partida[k])
+		# Partidas de antes de la 0.99: el pueblo se ha movido dentro del mapa ampliado
+		if not cfg.has_section_key("partida", "mapa_ampliado"):
+			var desp: Array = datos_mapa.get("desplazamiento", [0.0, 0.0])
+			for h in partida["historial"]:
+				h[0] = float(h[0]) + float(desp[0])
+				h[1] = float(h[1]) + float(desp[1])
+			partida["mapa_ampliado"] = true
+	_migrar_plantilla()
 	hud.set_dinero(partida["dinero"])
 
 
@@ -575,6 +621,12 @@ func _empezar_turno(tipo: String) -> void:
 		"titular_especial": "", "logros_nuevos": [], "detenidos_huida": 0, "detenidos": 0, "multas": 0, "comision": 0}
 	cola_relacionadas.clear()
 	llamadas_turno.clear()
+	var presos := int(partida.get("calabozo", 0))
+	if presos > 0:
+		var salen := int(ceil(presos / 2.0))
+		partida["calabozo"] = presos - salen
+		hud.notificar("El juzgado se ha llevado a %d presos del calabozo (quedan %d de %d plazas)." % [salen, int(partida["calabozo"]), _plazas_calabozo()], Color("9fc7e8"))
+	hud.set_calabozo(int(partida.get("calabozo", 0)), _plazas_calabozo())
 	_elegir_objetivos()
 	var t: Dictionary = TURNOS[tipo]
 	segundos_sim = float(t["inicio"]) * 3600.0
@@ -602,6 +654,11 @@ func _sueldos_turno() -> int:
 	var total := 0
 	for u in partida["flota"]:
 		total += _sueldo_de(u)
+	for p in _plantilla():
+		if int(p["vehiculo"]) < 0:
+			total += _sueldo_persona(p)
+	if partida.get("psicologo", false):
+		total += Catalogo.PRECIO_PSICOLOGO
 	return total
 
 
@@ -620,6 +677,15 @@ func _mostrar_equipos() -> void:
 			ids[i], datos["nombre"], int(u["personal"]), int(datos["plazas"]), aviso, u["equipo"].size()],
 			"accion": _mostrar_ficha.bind(i)})
 	opciones.append({"texto": "Tienda: comprar un vehículo nuevo", "accion": _mostrar_tienda_vehiculos})
+	var reserva := 0
+	var bajas := 0
+	for p in _plantilla():
+		if int(p["vehiculo"]) < 0:
+			reserva += 1
+		if int(p["baja"]) > 0:
+			bajas += 1
+	opciones.append({"texto": "Plantilla: %d personas · reserva %d · de baja %d" % [_plantilla().size(), reserva, bajas], "accion": _mostrar_plantilla})
+	opciones.append({"texto": "Mejoras de las bases (%d de %d)" % [(partida.get("mejoras", []) as Array).size(), Catalogo.MEJORAS.size()], "accion": _mostrar_mejoras})
 	opciones.append({"texto": "Volver a elegir turno", "accion": _mostrar_menu_turno})
 	hud.mostrar_panel("EQUIPOS", texto, opciones, true)
 
@@ -637,16 +703,24 @@ func _mostrar_ficha(i: int) -> void:
 		equipo_txt = ", ".join(PackedStringArray(nombres))
 	_completar_tripulacion(u)
 	var formacion := int(u.get("formacion", 0))
-	var texto := "%s · Velocidad %d · Plazas %d\nPersonal: %d (de baja: %d) · %s\nFormación: nivel %d de 2 (trabajan un %d%% más rápido)\nEquipo: %s\nDinero: %s" % [
+	var tripu := []
+	for p in _plantilla():
+		if int(p["vehiculo"]) == i:
+			tripu.append(_texto_persona_corto(p))
+	var texto := "%s · Velocidad %d · Plazas %d\nPersonal: %d (de baja: %d)\n· %s\nFormación: nivel %d de 2 (trabajan un %d%% más rápido)\nEquipo: %s\nDinero: %s" % [
 		datos["nombre"], int(datos["velocidad"]), int(datos["plazas"]), int(u["personal"]), u["heridos"].size(),
-		", ".join(PackedStringArray(u["nombres"])), formacion, formacion * 10, equipo_txt, Hud.formato_euros(partida["dinero"])]
+		"\n· ".join(PackedStringArray(tripu)), formacion, formacion * 10, equipo_txt, Hud.formato_euros(partida["dinero"])]
 	var dinero: int = partida["dinero"]
 	var opciones := []
 	if int(u["personal"]) < int(datos["plazas"]):
 		opciones.append({"texto": "Contratar a una persona (%s + %s/turno)" % [Hud.formato_euros(Catalogo.PRECIO_CONTRATAR), Hud.formato_euros(int(Catalogo.SUELDO_ESPECIAL.get(sv, Catalogo.SUELDO_POR_TURNO)))],
 			"accion": _contratar.bind(i), "activo": dinero >= Catalogo.PRECIO_CONTRATAR})
-	elif int(u["personal"]) > 1:
-		opciones.append({"texto": "Despedir a una persona (ahorra sueldo)", "accion": _despedir.bind(i)})
+	if int(u["personal"]) < int(datos["plazas"]) or u["heridos"].size() > 0:
+		for p in _plantilla():
+			if int(p["vehiculo"]) < 0 and p["servicio"] == sv and int(p["baja"]) == 0:
+				opciones.append({"texto": "Traer de la reserva a %s" % _texto_persona_corto(p), "accion": _asignar_persona.bind(_plantilla().find(p), i, true)})
+	if int(u["personal"]) > 1:
+		opciones.append({"texto": "Pasar a la reserva a la persona menos experta (ahorra sueldo)", "accion": _despedir.bind(i)})
 	if formacion < 2:
 		opciones.append({"texto": "Curso de formación para la tripulación (%s): trabajan más rápido" % Hud.formato_euros(Catalogo.PRECIO_FORMACION),
 			"accion": _formar.bind(i), "activo": dinero >= Catalogo.PRECIO_FORMACION})
@@ -675,7 +749,11 @@ func _formar(i: int) -> void:
 
 
 func _contratar(i: int) -> void:
-	partida["flota"][i]["personal"] = int(partida["flota"][i]["personal"]) + 1
+	var sv: String = Catalogo.VEHICULOS[partida["flota"][i]["tipo"]]["servicio"]
+	var p := _nueva_persona(sv)
+	p["vehiculo"] = i
+	_plantilla().append(p)
+	_recalcular_flota()
 	_cambiar_dinero(-Catalogo.PRECIO_CONTRATAR)
 	_guardar_partida()
 	_sonido("envio")
@@ -683,10 +761,15 @@ func _contratar(i: int) -> void:
 
 
 func _despedir(i: int) -> void:
-	partida["flota"][i]["personal"] = int(partida["flota"][i]["personal"]) - 1
-	var heridos: Array = partida["flota"][i]["heridos"]
-	while heridos.size() > int(partida["flota"][i]["personal"]):
-		heridos.pop_back()
+	# Pasa a la reserva a la persona con menos experiencia del vehículo
+	var peor = null
+	for p in _plantilla():
+		if int(p["vehiculo"]) == i and (peor == null or int(p["xp"]) < int(peor["xp"])):
+			peor = p
+	if peor != null:
+		peor["vehiculo"] = -1
+		hud.notificar("%s pasa a la reserva." % peor["nombre"], Color("9fc7e8"))
+	_recalcular_flota()
 	_guardar_partida()
 	_mostrar_ficha(i)
 
@@ -701,6 +784,13 @@ func _comprar_equipo(i: int, clave: String) -> void:
 
 func _vender(i: int) -> void:
 	var datos: Dictionary = Catalogo.VEHICULOS[partida["flota"][i]["tipo"]]
+	# Su tripulación pasa a la reserva y se corrigen los números de los demás
+	for p in _plantilla():
+		var vi := int(p["vehiculo"])
+		if vi == i:
+			p["vehiculo"] = -1
+		elif vi > i:
+			p["vehiculo"] = vi - 1
 	partida["flota"].remove_at(i)
 	_cambiar_dinero(int(datos["precio"]) / 2)
 	_guardar_partida()
@@ -730,8 +820,20 @@ func _mostrar_tienda_vehiculos() -> void:
 
 func _comprar_vehiculo(clave: String) -> void:
 	var d: Dictionary = Catalogo.VEHICULOS[clave]
-	partida["flota"].append({"tipo": clave, "base": Catalogo.BASE_SERVICIO[d["servicio"]],
-		"personal": mini(int(d.get("inicial", 2)), int(d["plazas"])), "heridos": [], "equipo": []})
+	partida["flota"].append({"tipo": clave, "base": String(d.get("base", Catalogo.BASE_SERVICIO[d["servicio"]])),
+		"personal": 0, "heridos": [], "equipo": [], "nombres": []})
+	var indice: int = partida["flota"].size() - 1
+	# Primero se usa gente de la reserva del mismo servicio; si no, se contrata
+	var faltan := mini(int(d.get("inicial", 2)), int(d["plazas"]))
+	for p in _plantilla():
+		if faltan > 0 and int(p["vehiculo"]) < 0 and p["servicio"] == d["servicio"] and int(p["baja"]) == 0:
+			p["vehiculo"] = indice
+			faltan -= 1
+	for k in faltan:
+		var np := _nueva_persona(String(d["servicio"]))
+		np["vehiculo"] = indice
+		_plantilla().append(np)
+	_recalcular_flota()
 	_cambiar_dinero(-int(d["precio"]))
 	_guardar_partida()
 	_sonido("envio")
@@ -777,6 +879,20 @@ func _mostrar_resumen() -> void:
 			if int(t) > 1:
 				quedan.append(int(t) - 1)
 		u["heridos"] = quedan
+	for p in _plantilla():
+		if int(p["baja"]) > 0:
+			p["baja"] = int(p["baja"]) - 1
+		var sube := 5 + (5 if _tiene_mejora("gimnasio") else 0) + (15 if partida.get("psicologo", false) else 0)
+		p["moral"] = mini(int(p["moral"]) + sube, 100)
+	for p in _plantilla():
+		if int(p["vehiculo"]) < 0:
+			sueldos += _sueldo_persona(p)
+	if partida.get("psicologo", false):
+		sueldos += Catalogo.PRECIO_PSICOLOGO
+	_recalcular_flota()
+	if not subidas_nivel.is_empty():
+		texto += "\n\nAscensos del personal:\n· " + "\n· ".join(PackedStringArray(subidas_nivel))
+		subidas_nivel.clear()
 	partida["dinero"] = int(partida["dinero"]) - sueldos
 	hud.set_dinero(partida["dinero"])
 	texto += "\n\nIngresos del turno: %s\nSueldos del personal: -%s\nDinero total: %s" % [
@@ -1173,6 +1289,13 @@ func _dar_logro(id: String) -> void:
 
 ## Se llama al cerrar cada emergencia: reputación, puntos, historial, logros e investigaciones.
 func _al_cerrar_incidente(inc, estrellas: int) -> void:
+	if inc.fallecidos > 0:
+		var baja := 8 if partida.get("psicologo", false) else 15
+		for v in inc.en_escena:
+			if is_instance_valid(v) and v.indice_flota >= 0:
+				for p in _plantilla():
+					if int(p["vehiculo"]) == v.indice_flota:
+						p["moral"] = maxi(int(p["moral"]) - baja, 0)
 	_sumar_reputacion((estrellas - 3) * 1.2 - (2.0 if inc.fallecidos > 0 else 0.0))
 	partida["puntos"] = int(partida["puntos"]) + estrellas
 	var historial: Array = partida["historial"]
@@ -1345,6 +1468,9 @@ func _mostrar_comisaria() -> void:
 	for c in _casos():
 		if c["estado"] == "abierto":
 			abiertos += 1
+	var en_calabozo := int(partida.get("calabozo", 0))
+	opciones.append({"texto": "Calabozo: %d de %d plazas ocupadas · Llevar presos a la cárcel" % [en_calabozo, _plazas_calabozo()],
+		"accion": _trasladar_presos, "activo": en_calabozo > 0})
 	if _flota_tiene("judicial") or not _casos().is_empty():
 		opciones.append({"texto": "Casos de la Policía Judicial (%d abiertos)" % abiertos, "accion": _mostrar_casos})
 	opciones.append({"texto": "Volver al mapa (el juego sigue)", "accion": _cerrar_comisaria})
@@ -1987,6 +2113,7 @@ func _process(delta: float) -> void:
 	if not pausa_tactica:
 		_actualizar_eventos(delta)
 		_vigilar_ambulancias(delta)
+		_vigilar_recogidas(delta)
 		_t_historias -= delta
 		if _t_historias <= 0.0:
 			_t_historias = 1.0
@@ -2013,7 +2140,7 @@ func _process(delta: float) -> void:
 		_radar_camuflado()
 		for v in vehiculos:
 			if v.estado == "Disponible":
-				v.cansancio = maxf(0.0, v.cansancio - 2.0)
+				v.cansancio = maxf(0.0, v.cansancio - (4.0 if _tiene_mejora("gimnasio") else 2.0))
 			elif v.estado == "Patrullando":
 				v.cansancio = maxf(0.0, v.cansancio - 0.5)
 	_comprobar_fin_turno()
@@ -2036,7 +2163,7 @@ func _actualizar_trafico() -> void:
 
 ## Los iconos se mantienen legibles aunque se aleje el mapa.
 func _ajustar_iconos() -> void:
-	var s := clampf(0.85 / camara.zoom.x, 0.8, 2.6)
+	var s := clampf(0.85 / camara.zoom.x, 0.8, 6.0)
 	for v in vehiculos:
 		v.scale = Vector2(s, s)
 	if sospechoso != null and is_instance_valid(sospechoso):
@@ -2057,7 +2184,7 @@ func _mover_camara(delta: float) -> void:
 	camara.position += v * 650.0 * d / camara.zoom.x
 	var z := Input.get_action_strength("zoom_mas") - Input.get_action_strength("zoom_menos")
 	if absf(z) > 0.05:
-		var nz := clampf(camara.zoom.x * (1.0 + z * 1.6 * d), 0.3, 2.2)
+		var nz := clampf(camara.zoom.x * (1.0 + z * 1.6 * d), 0.09, 2.2)
 		camara.zoom = Vector2(nz, nz)
 	camara.position = camara.position.clamp(Vector2.ZERO, tamano_mapa)
 
@@ -3327,6 +3454,15 @@ func _enviar_unidad(v, inc) -> void:
 		if inc.estado == "Pendiente":
 			inc.estado = "Unidad en camino"
 	var destino: int = inc.nodo_real if inc.precision >= 3 else inc.nodo_aproximado
+	if v.aereo:
+		if not v.en_movimiento and v.position.distance_to(red.pos(v.nodo_base)) < 60.0:
+			v.espera_despegue = Vehiculo.DESPEGUE
+		_cambiar_dinero(-Catalogo.COSTE_VUELO)
+		v.ir_a(destino)
+		_radio(v, "Recibido, central. Despegamos hacia %s (combustible: %s)." % [inc.id_incidente, Hud.formato_euros(Catalogo.COSTE_VUELO)])
+		_consejo("helicoptero", "Los helicópteros vuelan en línea recta y no les afecta el tráfico, pero tardan 10 segundos en despegar y cada salida cuesta combustible. Compensan en avisos lejos del pueblo.")
+		_cerrar_panel()
+		return
 	v.ir_a(destino)
 	_radio(v, "Recibido, central. Salimos con sirenas hacia %s." % inc.id_incidente)
 	_cerrar_panel()
@@ -3343,16 +3479,35 @@ func _on_unidad_llega(v) -> void:
 				v.fase = "buscando"
 				v.estado = "Buscando el lugar"
 				_radio(v, "Estamos en la zona, pero no localizamos el incidente. Buscando...")
-				_programar(TIEMPO_BUSQUEDA[inc.precision], _fin_busqueda.bind(v))
+				_programar(TIEMPO_BUSQUEDA[inc.precision] * (0.35 if v.aereo else 1.0), _fin_busqueda.bind(v))
+				if v.aereo:
+					_radio(v, "Sobrevolamos la zona buscando el lugar desde el aire.")
 			else:
 				_comenzar_intervencion(v)
 		"buscando2":
 			_comenzar_intervencion(v)
 		"calabozo":
 			_detenidos_en_calabozo(v)
+		"recoger_presos":
+			var lleva := mini(_plazas_detenidos(v), int(partida.get("calabozo", 0)))
+			partida["calabozo"] = int(partida.get("calabozo", 0)) - lleva
+			hud.set_calabozo(int(partida["calabozo"]), _plazas_calabozo())
+			if lleva <= 0:
+				_regresar(v)
+			else:
+				v.detenidos_a_bordo = lleva
+				v.fase = "carcel"
+				v.estado = "Trasladando a prisión"
+				_radio(v, "Llevamos %d presos al centro penitenciario." % lleva)
+				v.ir_a(nodo_salida)
+		"carcel":
+			_radio(v, "%d presos entregados en el centro penitenciario. Volvemos." % v.detenidos_a_bordo)
+			v.detenidos_a_bordo = 0
+			_regresar(v)
 		"traslado":
 			v.fase = "hospital"
-			_radio(v, "Paciente entregado en el Hospital General de Ciudad Real.")
+			_radio(v, "%s en el Hospital General de Ciudad Real." % ("Paciente entregado" if v.pacientes_a_bordo <= 1 else "%d pacientes entregados" % v.pacientes_a_bordo))
+			v.pacientes_a_bordo = 0
 			_programar(6.0, _regresar.bind(v))
 		"regreso":
 			if v.externo:
@@ -3392,6 +3547,9 @@ func _comenzar_intervencion(v) -> void:
 	v.estado = "En intervención"
 	v.fase = "intervencion"
 	v.en_emergencia = false
+	if inc.recogida != "" and inc.activo():
+		_cargar_recogida(v, inc)
+		return
 	if not inc.activo() or inc.evento == "terminado":
 		_radio(v, "En el lugar. La situación ya está controlada, volvemos.")
 		_programar(4.0, _regresar.bind(v))
@@ -3408,7 +3566,17 @@ func _comenzar_intervencion(v) -> void:
 			_radio(v, "En el lugar. La policía se encarga de los trámites; nos retiramos.")
 			_programar(4.0, _regresar.bind(v))
 		return
-	if inc.cadena == "robo" and v.servicio == "policia" and _robo_huida(inc, v):
+	if inc.cadena == "robo" and v.servicio == "policia" and not v.aereo and _robo_huida(inc, v):
+		return
+	if v.bono == "heli_policia" and inc.categoria in ["pelea", "robo", "control"] and inc.historia == null:
+		# El helicóptero no puede detener: vigila desde el aire y guía a las patrullas
+		if not inc.apoyos.has(v):
+			inc.apoyos.append(v)
+		v.fase = "apoyo"
+		_radio(v, "Helicóptero sobre la zona: los tenemos localizados desde el aire. Hace falta una patrulla en tierra para actuar.")
+		if int(inc.presentes.get("policia", 0)) == 0 and not inc.refuerzos_avisados.has("policia_tierra"):
+			inc.refuerzos_avisados["policia_tierra"] = 1
+			hud.notificar("%s: el helicóptero vigila, pero necesitas una patrulla en tierra." % inc.id_incidente, Color("ffd166"))
 		return
 	if v.servicio == "proteccion_civil" and not inc.requeridas.has(v.servicio):
 		# Protección Civil se queda hasta el final: acordona, atiende y acelera el trabajo
@@ -3512,6 +3680,15 @@ func _iniciar_evento(inc, v) -> void:
 	inc.duracion = inc.tiempo_intervencion + (inc.intensidad * 5.0 if inc.categoria == "fuego" else 0.0)
 	if inc.categoria == "busqueda":
 		inc.duracion *= 2.4   # buscar a alguien lleva tiempo (más patrullas y el perro lo acortan)
+	# A veces aparecen más heridos de los que se esperaban
+	if inc.historia == null and inc.recogida == "" and inc.categoria in ["medico", "atrapado", "fuego", "pelea"] and inc.traslado:
+		var p_mas: float = {"tranquila": 0.08, "normal": 0.15, "caotica": 0.25}.get(opciones["dificultad"], 0.15)
+		if randf() < p_mas:
+			var extra := 1 if randf() < 0.7 else 2
+			inc.heridos += extra
+			inc.requeridas["ambulancia"] = int(inc.requeridas.get("ambulancia", 0)) + 1
+			_radio(v, "¡Central, hay %s! Necesitamos más ambulancias para el traslado." % ("otro herido más" if extra == 1 else "dos heridos más"))
+			_pedir_refuerzos(inc)
 	match inc.categoria:
 		"fuego":
 			_radio(v, "En el lugar. Comenzamos la extinción.")
@@ -3655,7 +3832,7 @@ func _actualizar_eventos(delta: float) -> void:
 ## Heridos esperando ambulancia: cuenta atrás.
 func _vigilar_ambulancias(delta: float) -> void:
 	for inc in incidentes.duplicate():
-		if inc.t_ambulancia < 0.0 or not inc.activo():
+		if inc.t_ambulancia < 0.0 or not inc.activo() or inc.recogida != "":
 			continue
 		if inc.faltan_de("ambulancia") == 0:
 			inc.t_ambulancia = -1.0
@@ -3724,6 +3901,32 @@ func _ritmo(inc) -> float:
 		r *= 1.5
 	if _alguno_con_bono(inc, "pma") and inc.heridos >= 2:
 		r *= 1.0 + 0.3 * mini(inc.heridos, 3)
+	# Plantilla (1.1): experiencia, habilidades y moral de quienes están allí
+	var bonus := 1.0
+	for v in inc.unidades_en_escena():
+		bonus += 0.05 * v.nivel_medio
+		if v.moral_media < 40.0:
+			bonus -= 0.1
+		var h: Array = v.habilidades
+		if h.has("triaje") and inc.heridos >= 2:
+			bonus += 0.2
+		if h.has("negociador") and (inc.categoria == "pelea" or inc.marcas.has("armado")):
+			bonus += 0.2
+		if h.has("interrogador") and (inc.categoria == "control" or inc.caso_id != ""):
+			bonus += 0.2
+		if h.has("altura") and inc.categoria == "atrapado":
+			bonus += 0.25
+		if h.has("forestal") and inc.categoria == "fuego" and inc.intensidad >= 2:
+			bonus += 0.2
+		if h.has("trafico"):
+			bonus += 0.1
+		if h.has("rescate") and (inc.marcas.has("derrumbe") or inc.marcas.has("inundacion")):
+			bonus += 0.25
+		if h.has("nrbq") and inc.marcas.has("quimico"):
+			bonus += 0.25
+		if (h.has("olfato") or h.has("paciencia")) and inc.caso_id != "":
+			bonus += 0.25
+	r *= clampf(bonus, 0.7, 2.0)
 	# GEO, UME y detectives (0.98)
 	if _bono_en_escena(inc, "mando"):
 		r *= 1.25
@@ -3753,6 +3956,8 @@ func _ritmo(inc) -> float:
 			r *= 1.2
 	if _equipo_en_escena(inc, "dron") and inc.categoria == "busqueda":
 		r *= 1.3
+	if _bono_en_escena(inc, "heli_policia"):
+		r *= 2.2 if inc.categoria == "busqueda" else 1.25
 	if _bono_en_escena(inc, "detectives") and inc.caso_id != "":
 		r *= 1.0 + (0.2 if _equipo_en_escena(inc, "kit_forense") else 0.0)
 	# Sin los refuerzos que piden, trabajan más despacio (según la dificultad)
@@ -3888,9 +4093,13 @@ func _finalizar_evento(inc, exito: bool) -> void:
 				riesgo += 0.2
 			if inc.marcas.has("consejo_bueno") or inc.marcas.has("rcp"):
 				riesgo *= 0.6
+			for v in inc.unidades_en_escena():
+				if v.habilidades.has("reanimacion"):
+					riesgo *= 0.6
+					break
 			if _alguno_con_bono(inc, "pma"):
 				riesgo *= 0.3
-			elif _alguno_con_bono(inc, "vir") or _alguno_con_bono(inc, "medico"):
+			elif _alguno_con_bono(inc, "vir") or _alguno_con_bono(inc, "medico") or _alguno_con_bono(inc, "heli_sanitario"):
 				riesgo *= 0.6
 		elif inc.categoria == "fuego" and inc.intensidad >= 3 and inc.empeorado:
 			riesgo = 0.3
@@ -3913,42 +4122,461 @@ func _finalizar_evento(inc, exito: bool) -> void:
 		inc.detenidos -= 1
 		inc.escapado = true
 		inc.resultado += " Con tan pocos agentes, uno de los implicados ha conseguido escapar."
-	if inc.traslado and exito:
-		var puede := false
-		for v in inc.en_lugar:
-			if is_instance_valid(v) and v.servicio == "ambulancia" and not NO_TRASLADAN.has(v.bono):
-				puede = true
-		if not puede:
-			inc.traslado = false
-			inc.resultado += " Paciente estabilizado: lo recoge una ambulancia de Ciudad Real."
 	_informe_incidente(inc)
 	_retirar_en_camino(inc)
 	for a in inc.apoyos:
 		if is_instance_valid(a) and a.incidente == inc:
 			a.servicios_seguidos += 1
+			a.xp_turno += 1
 			_regresar(a)
 	inc.apoyos.clear()
 	for v in inc.en_lugar:
 		if is_instance_valid(v):
 			v.servicios_seguidos += 1
-	# Los detenidos van al calabozo en los coches de policía que estaban allí
-	var por_llevar: int = inc.detenidos
-	var trasladado := false
-	for v in inc.en_lugar.duplicate():
-		if not is_instance_valid(v) or v.incidente != inc:
-			continue
-		if v.servicio == "policia" and por_llevar > 0 and _plazas_detenidos(v) > 0:
-			var lleva := mini(por_llevar, _plazas_detenidos(v))
-			por_llevar -= lleva
-			_llevar_al_calabozo(v, lleva)
-		elif v.servicio == "ambulancia" and inc.traslado and not NO_TRASLADAN.has(v.bono) and not trasladado:
-			trasladado = true
-			_trasladar(v)
+			v.xp_turno += 1
+	_repartir_al_terminar(inc)
+
+
+# ================================================================ PLANTILLA (1.1)
+## Cada persona tiene nombre, servicio, experiencia, nivel, habilidades, moral
+## y puede estar en un vehículo, en la reserva o de baja. Los datos de cada
+## vehículo (personal, heridos, nombres) se calculan a partir de la plantilla.
+
+func _plantilla() -> Array:
+	if not partida.has("plantilla"):
+		partida["plantilla"] = []
+	return partida["plantilla"]
+
+
+func _nueva_persona(sv: String) -> Dictionary:
+	var usados := []
+	for p in _plantilla():
+		usados.append(p["nombre"])
+	var nombre := ""
+	for intento in 20:
+		nombre = "%s %s." % [Pueblo.NOMBRES_PERSONAL[randi() % Pueblo.NOMBRES_PERSONAL.size()], "ABCDEFGHIJLMNOPRSTV"[randi() % 19]]
+		if not usados.has(nombre):
+			break
+	return {"nombre": nombre, "servicio": sv, "xp": 0, "nivel": 0, "habilidades": [], "vehiculo": -1, "baja": 0, "moral": 75}
+
+
+## Partidas antiguas: crea la plantilla a partir de las tripulaciones.
+func _migrar_plantilla() -> void:
+	if not _plantilla().is_empty():
+		_recalcular_flota()
+		return
+	for i in partida["flota"].size():
+		var u: Dictionary = partida["flota"][i]
+		_completar_tripulacion(u)
+		var sv: String = Catalogo.VEHICULOS[u["tipo"]]["servicio"]
+		var bajas: Array = u["heridos"]
+		for k in (u["nombres"] as Array).size():
+			var p := _nueva_persona(sv)
+			p["nombre"] = "%s %s." % [u["nombres"][k], "ABCDEFGHIJLMNOPRSTV"[randi() % 19]]
+			p["vehiculo"] = i
+			if k < bajas.size():
+				p["baja"] = int(bajas[k])
+			_plantilla().append(p)
+	_recalcular_flota()
+
+
+## Rehace personal, bajas y nombres de cada vehículo desde la plantilla.
+func _recalcular_flota() -> void:
+	for i in partida["flota"].size():
+		var u: Dictionary = partida["flota"][i]
+		var nombres := []
+		var bajas := []
+		for p in _plantilla():
+			if int(p["vehiculo"]) == i:
+				nombres.append(String(p["nombre"]))
+				if int(p["baja"]) > 0:
+					bajas.append(int(p["baja"]))
+		u["nombres"] = nombres
+		u["personal"] = nombres.size()
+		u["heridos"] = bajas
+
+
+func _datos_tripulacion(v, i: int) -> void:
+	var habs := []
+	var nivel := 0.0
+	var moral := 0.0
+	var n := 0
+	for p in _plantilla():
+		if int(p["vehiculo"]) == i and int(p["baja"]) == 0:
+			n += 1
+			nivel += float(p["nivel"])
+			moral += float(p["moral"])
+			for h in p["habilidades"]:
+				if not habs.has(h):
+					habs.append(h)
+	v.habilidades = habs
+	v.nivel_medio = nivel / n if n > 0 else 0.0
+	v.moral_media = moral / n if n > 0 else 70.0
+
+
+func _sueldo_persona(p: Dictionary) -> int:
+	var base := int(Catalogo.SUELDO_ESPECIAL.get(p["servicio"], Catalogo.SUELDO_POR_TURNO))
+	if int(p["vehiculo"]) < 0:
+		return int(round(base * Catalogo.FACTOR_SUELDO_RESERVA))
+	return base
+
+
+func _ganar_xp(p: Dictionary, cuanto: int) -> void:
+	p["xp"] = int(p["xp"]) + cuanto
+	var nivel := 0
+	for k in Catalogo.XP_NIVEL.size():
+		if int(p["xp"]) >= int(Catalogo.XP_NIVEL[k]):
+			nivel = k
+	if nivel > int(p["nivel"]):
+		p["nivel"] = nivel
+		var nueva := _habilidad_al_azar(p)
+		var t := "%s asciende a %s" % [p["nombre"], Catalogo.NOMBRES_NIVEL[nivel]]
+		if nueva != "":
+			t += " y aprende: %s" % String(Catalogo.HABILIDADES[p["servicio"]][nueva]).split(":")[0]
+		subidas_nivel.append(t)
+
+
+func _habilidad_al_azar(p: Dictionary) -> String:
+	var posibles: Array = (Catalogo.HABILIDADES.get(p["servicio"], {}) as Dictionary).keys()
+	posibles.shuffle()
+	for h in posibles:
+		if not (p["habilidades"] as Array).has(h):
+			(p["habilidades"] as Array).append(h)
+			return h
+	return ""
+
+
+func _texto_persona_corto(p: Dictionary) -> String:
+	var t := "%s (%s, %d serv.)" % [p["nombre"], Catalogo.NOMBRES_NIVEL[int(p["nivel"])], int(p["xp"])]
+	if int(p["baja"]) > 0:
+		t += " · DE BAJA %d turno%s" % [int(p["baja"]), "" if int(p["baja"]) == 1 else "s"]
+	if int(p["moral"]) < 40:
+		t += " · moral baja"
+	return t
+
+
+func _plazas_calabozo() -> int:
+	return Catalogo.PLAZAS_CALABOZO * (2 if _tiene_mejora("calabozo") else 1)
+
+
+func _tiene_mejora(clave: String) -> bool:
+	return (partida.get("mejoras", []) as Array).has(clave)
+
+
+func _mostrar_plantilla() -> void:
+	var ids := _ids_flota()
+	var opciones := []
+	var lista: Array = _plantilla()
+	var orden: Array = range(lista.size())
+	orden.sort_custom(func(a, b): return String(lista[a]["servicio"]) + String(lista[a]["nombre"]) < String(lista[b]["servicio"]) + String(lista[b]["nombre"]))
+	for k in orden:
+		var p: Dictionary = lista[k]
+		var donde: String = "reserva" if int(p["vehiculo"]) < 0 else (String(ids[int(p["vehiculo"])]) if int(p["vehiculo"]) < ids.size() else "?")
+		opciones.append({"texto": "%s · %s · %s" % [NOMBRES_SERVICIO.get(p["servicio"], p["servicio"]), _texto_persona_corto(p), donde], "accion": _mostrar_persona.bind(k)})
+	for sv in ["ambulancia", "policia", "bomberos"]:
+		opciones.append({"texto": "Contratar para la reserva: %s (%s + %s/turno)" % [NOMBRES_SERVICIO[sv], Hud.formato_euros(Catalogo.PRECIO_CONTRATAR),
+			Hud.formato_euros(int(round(Catalogo.SUELDO_POR_TURNO * Catalogo.FACTOR_SUELDO_RESERVA)))], "accion": _contratar_reserva.bind(sv), "activo": int(partida["dinero"]) >= Catalogo.PRECIO_CONTRATAR})
+	var psi: bool = partida.get("psicologo", false)
+	opciones.append({"texto": ("Despedir al psicólogo de emergencias" if psi else "Contratar un psicólogo de emergencias (%s/turno): la moral se recupera mucho antes") % Hud.formato_euros(Catalogo.PRECIO_PSICOLOGO), "accion": _cambiar_psicologo})
+	opciones.append({"texto": "Volver a equipos", "accion": _mostrar_equipos})
+	var texto := "Tu personal. La reserva cobra el 60 %% y sirve para cubrir bajas sin dejar vehículos parados. Con la experiencia suben a Experto/a (8 servicios) y Veterano/a (20) y aprenden habilidades.\nDinero: %s" % Hud.formato_euros(partida["dinero"])
+	hud.mostrar_panel("PLANTILLA", texto, opciones, true, 120.0, 720.0)
+
+
+func _mostrar_persona(k: int) -> void:
+	var p: Dictionary = _plantilla()[k]
+	var ids := _ids_flota()
+	var habs := []
+	for h in p["habilidades"]:
+		habs.append(String(Catalogo.HABILIDADES.get(p["servicio"], {}).get(h, h)))
+	var texto := "%s · %s\n%s · %d servicios · moral %d/100\n%s\nHabilidades:\n· %s" % [p["nombre"], NOMBRES_SERVICIO.get(p["servicio"], p["servicio"]),
+		Catalogo.NOMBRES_NIVEL[int(p["nivel"])], int(p["xp"]), int(p["moral"]),
+		"En la reserva" if int(p["vehiculo"]) < 0 else "Destino: %s" % ids[int(p["vehiculo"])],
+		"ninguna todavía" if habs.is_empty() else "\n· ".join(PackedStringArray(habs))]
+	if int(p["baja"]) > 0:
+		texto += "\n\nDe baja: %d turno%s más." % [int(p["baja"]), "" if int(p["baja"]) == 1 else "s"]
+	var opciones := []
+	for i in partida["flota"].size():
+		var u: Dictionary = partida["flota"][i]
+		var d: Dictionary = Catalogo.VEHICULOS[u["tipo"]]
+		if d["servicio"] == p["servicio"] and i != int(p["vehiculo"]) and int(u["personal"]) < int(d["plazas"]):
+			opciones.append({"texto": "Destinar a %s (%d/%d)" % [ids[i], int(u["personal"]), int(d["plazas"])], "accion": _asignar_persona.bind(k, i, false)})
+	if int(p["vehiculo"]) >= 0:
+		opciones.append({"texto": "Pasar a la reserva", "accion": _asignar_persona.bind(k, -1, false)})
+	var posibles: Array = (Catalogo.HABILIDADES.get(p["servicio"], {}) as Dictionary).keys()
+	var precio := Catalogo.PRECIO_CURSO / (2 if _tiene_mejora("aula") else 1)
+	for h in posibles:
+		if not (p["habilidades"] as Array).has(h):
+			opciones.append({"texto": "Curso: %s (%s)" % [Catalogo.HABILIDADES[p["servicio"]][h], Hud.formato_euros(precio)], "accion": _dar_curso.bind(k, h), "activo": int(partida["dinero"]) >= precio})
+	opciones.append({"texto": "Despedir (se va de la plantilla)", "accion": _despedir_persona.bind(k)})
+	opciones.append({"texto": "Volver a la plantilla", "accion": _mostrar_plantilla})
+	hud.mostrar_panel("PERSONAL", texto, opciones, true, 120.0, 720.0)
+
+
+func _asignar_persona(k: int, vehiculo: int, volver_ficha: bool) -> void:
+	var p: Dictionary = _plantilla()[k]
+	if vehiculo >= 0:
+		# Si el vehículo está lleno, el de baja con más turnos pasa a la reserva para dejarle sitio
+		var u: Dictionary = partida["flota"][vehiculo]
+		var d: Dictionary = Catalogo.VEHICULOS[u["tipo"]]
+		if int(u["personal"]) >= int(d["plazas"]):
+			for otro in _plantilla():
+				if int(otro["vehiculo"]) == vehiculo and int(otro["baja"]) > 0:
+					otro["vehiculo"] = -1
+					break
+	p["vehiculo"] = vehiculo
+	_recalcular_flota()
+	_guardar_partida()
+	_sonido("envio")
+	if volver_ficha and vehiculo >= 0:
+		_mostrar_ficha(vehiculo)
+	else:
+		_mostrar_persona(k)
+
+
+func _contratar_reserva(sv: String) -> void:
+	_plantilla().append(_nueva_persona(sv))
+	_cambiar_dinero(-Catalogo.PRECIO_CONTRATAR)
+	_guardar_partida()
+	_sonido("envio")
+	_mostrar_plantilla()
+
+
+func _despedir_persona(k: int) -> void:
+	var p: Dictionary = _plantilla()[k]
+	_plantilla().remove_at(k)
+	_recalcular_flota()
+	_guardar_partida()
+	hud.notificar("%s deja el servicio." % p["nombre"])
+	_mostrar_plantilla()
+
+
+func _dar_curso(k: int, h: String) -> void:
+	var p: Dictionary = _plantilla()[k]
+	var precio := Catalogo.PRECIO_CURSO / (2 if _tiene_mejora("aula") else 1)
+	(p["habilidades"] as Array).append(h)
+	_cambiar_dinero(-precio)
+	_guardar_partida()
+	_sonido("envio")
+	hud.notificar("%s ha terminado el curso." % p["nombre"], Color("8fd3a0"))
+	_mostrar_persona(k)
+
+
+func _cambiar_psicologo() -> void:
+	partida["psicologo"] = not bool(partida.get("psicologo", false))
+	_guardar_partida()
+	_mostrar_plantilla()
+
+
+func _mostrar_mejoras() -> void:
+	var opciones := []
+	for clave in Catalogo.MEJORAS:
+		var m: Dictionary = Catalogo.MEJORAS[clave]
+		if _tiene_mejora(clave):
+			opciones.append({"texto": "✔ %s: %s" % [m["nombre"], m["ayuda"]], "accion": _mostrar_mejoras, "activo": false})
 		else:
-			_regresar(v)
-	if por_llevar > 0:
-		stats["detenidos"] += por_llevar
-		partida["detenidos_total"] = int(partida["detenidos_total"]) + por_llevar
+			opciones.append({"texto": "Construir %s (%s): %s" % [m["nombre"], Hud.formato_euros(m["precio"]), m["ayuda"]],
+				"accion": _comprar_mejora.bind(clave), "activo": int(partida["dinero"]) >= int(m["precio"])})
+	opciones.append({"texto": "Volver a equipos", "accion": _mostrar_equipos})
+	hud.mostrar_panel("MEJORAS DE LAS BASES", "Dinero: %s" % Hud.formato_euros(partida["dinero"]), opciones, true)
+
+
+func _comprar_mejora(clave: String) -> void:
+	(partida["mejoras"] as Array).append(clave)
+	_cambiar_dinero(-int(Catalogo.MEJORAS[clave]["precio"]))
+	_guardar_partida()
+	_sonido("envio")
+	hud.notificar("Mejora construida: %s." % Catalogo.MEJORAS[clave]["nombre"], Color("8fd3a0"))
+	_mostrar_mejoras()
+
+
+# ================================================================ HERIDOS Y DETENIDOS (1.0)
+## Al terminar un aviso: cada ambulancia lleva los heridos que caben (básica 1,
+## SVA 2, helicóptero 1) y cada coche de policía los detenidos que caben. Lo que
+## no cabe se queda esperando con una unidad, como un aviso nuevo de «recogida»
+## al que mandas más ambulancias o furgones (o los mismos cuando vuelvan).
+
+func _repartir_al_terminar(inc) -> void:
+	var unidades: Array = []
+	for v in inc.en_lugar:
+		if is_instance_valid(v) and v.incidente == inc and not unidades.has(v):
+			unidades.append(v)
+	var heridos := 0
+	if inc.traslado and inc.exito:
+		heridos = maxi(inc.heridos - inc.fallecidos, 0)
+		if heridos == 0 and inc.fallecidos == 0:
+			heridos = 1
+	var detenidos: int = inc.detenidos
+	var libres: Array = unidades.duplicate()
+	# 1) Quién se queda con los que no quepan
+	var cap_amb := 0
+	var cap_pol := 0
+	for v in unidades:
+		cap_amb += v.camillas
+		cap_pol += _plazas_detenidos(v)
+	var cuidador_h = null
+	var cuidador_d = null
+	if heridos > cap_amb:
+		# Se queda un sanitario que no traslada (VIR, moto, PMA) o, si no, cualquiera que no traslade
+		for v in libres:
+			if v.servicio == "ambulancia" and v.camillas == 0:
+				cuidador_h = v
+				break
+		if cuidador_h == null:
+			for v in libres:
+				if v.camillas == 0 and _plazas_detenidos(v) == 0:
+					cuidador_h = v
+					break
+		if cuidador_h == null:
+			for v in libres:
+				if v.camillas == 0:
+					cuidador_h = v
+					break
+		if cuidador_h != null:
+			libres.erase(cuidador_h)
+	var policias: Array = []
+	for v in libres:
+		if v.servicio in ["policia", "geo", "judicial"] and not v.aereo:
+			policias.append(v)
+	var cap_libre := 0
+	for v in policias:
+		cap_libre += _plazas_detenidos(v)
+	if detenidos > cap_libre and not policias.is_empty():
+		# Se queda vigilando la unidad que menos detenidos puede llevar
+		policias.sort_custom(func(a, b): return _plazas_detenidos(a) < _plazas_detenidos(b))
+		cuidador_d = policias[0]
+		policias.remove_at(0)
+		libres.erase(cuidador_d)
+	# 2) Ambulancias con heridos al hospital
+	for v in libres.duplicate():
+		if heridos > 0 and v.camillas > 0:
+			var lleva := mini(heridos, v.camillas)
+			heridos -= lleva
+			v.pacientes_a_bordo = lleva
+			libres.erase(v)
+			_trasladar(v)
+	# 3) Policías con detenidos al calabozo
+	for v in policias:
+		if detenidos > 0 and _plazas_detenidos(v) > 0 and libres.has(v):
+			var lleva := mini(detenidos, _plazas_detenidos(v))
+			detenidos -= lleva
+			libres.erase(v)
+			_llevar_al_calabozo(v, lleva)
+	# 4) Lo que queda: aviso de recogida con la unidad que se queda
+	if heridos > 0:
+		_crear_recogida(inc, "heridos", heridos, cuidador_h)
+	if detenidos > 0:
+		if cuidador_d != null:
+			_crear_recogida(inc, "detenidos", detenidos, cuidador_d)
+		else:
+			inc.resultado += " Sin agentes para custodiarlos, %d implicados se han ido." % detenidos
+	for v in libres:
+		_regresar(v)
+
+
+func _crear_recogida(inc, tipo: String, n: int, cuidador) -> void:
+	var heridos := tipo == "heridos"
+	var titulo := ("Traslado pendiente: %d herido%s de %s" % [n, "" if n == 1 else "s", inc.id_incidente]) if heridos else ("Recogida de %d detenido%s de %s" % [n, "" if n == 1 else "s", inc.id_incidente])
+	var d := {"titulo": titulo, "servicios": ["ambulancia"] if heridos else ["policia"], "principal": "ambulancia" if heridos else "policia",
+		"urgencia": 9999.0, "intervencion": 3.0, "categoria": "medico" if heridos else "control",
+		"requeridas": {"ambulancia" if heridos else "policia": 1},
+		"info": ["Hacen falta %s" % ("ambulancias: la básica lleva 1 herido y la SVA, 2" if heridos else "coches o furgones: un coche lleva 2 detenidos, el furgón 4 y el antidisturbios 8")]}
+	var r = _nuevo_aviso(d, inc.nodo_real, "", "Unidades en el lugar", false)
+	if r == null:
+		return
+	r.recogida = tipo
+	r.pendientes = n
+	r.origen = inc.id_incidente
+	r.evento = "recogida"
+	r.estado = "En intervención"
+	r.tiempo_llegada = 0.0
+	if heridos:
+		r.t_ambulancia = float(ESPERA_AMBULANCIA.get(opciones["dificultad"], 95.0)) * 1.3
+	if cuidador != null and is_instance_valid(cuidador):
+		r.cuidador = cuidador
+		cuidador.incidente = r
+		cuidador.fase = "custodia"
+		cuidador.estado = "Atendiendo heridos" if heridos else "Custodiando detenidos"
+		r.en_escena.append(cuidador)
+		r.unidades.append(cuidador)
+		_radio(cuidador, ("Nos quedamos con %d herido%s: necesitamos más ambulancias para llevarlos al hospital." % [n, "" if n == 1 else "s"]) if heridos
+			else ("Nos quedamos custodiando a %d detenidos: necesitamos un furgón o más coches para llevarlos al calabozo." % n))
+	hud.notificar("%s: %s. Manda %s." % [r.id_incidente, titulo, "ambulancias" if heridos else "furgones o patrullas"], Color("ffd166"))
+	_sonido("alerta")
+	_consejo("recogida", "Cuando no caben todos, una unidad se queda con los heridos o detenidos y aparece un aviso de recogida. Manda más ambulancias o furgones, o los mismos cuando vuelvan del hospital o del calabozo.")
+
+
+## Una unidad llega a un aviso de recogida y se lleva a los que le caben.
+func _cargar_recogida(v, r) -> void:
+	var heridos: bool = r.recogida == "heridos"
+	var cabe: int = v.camillas if heridos else _plazas_detenidos(v)
+	if cabe <= 0:
+		_radio(v, "No podemos llevar %s en este vehículo. Volvemos." % ("heridos" if heridos else "detenidos"))
+		_regresar(v)
+		return
+	var lleva := mini(cabe, r.pendientes)
+	r.pendientes -= lleva
+	r.unidades.erase(v)
+	if heridos:
+		v.pacientes_a_bordo = lleva
+		v.incidente = null
+		_radio(v, "Recogemos %d herido%s." % [lleva, "" if lleva == 1 else "s"])
+		_trasladar(v)
+	else:
+		_llevar_al_calabozo(v, lleva)
+	if r.pendientes > 0:
+		r.titulo = ("Traslado pendiente: %d herido%s de %s" if heridos else "Recogida de %d detenido%s de %s") % [r.pendientes, "" if r.pendientes == 1 else "s", r.origen]
+		hud.notificar("%s: quedan %d por llevar." % [r.id_incidente, r.pendientes], Color("ffd166"))
+		return
+	_cerrar_recogida(r, "Todos trasladados.")
+
+
+func _cerrar_recogida(r, texto: String) -> void:
+	r.estado = "Resuelta"
+	r.evento = "terminado"
+	r.resultado = texto
+	r.t_ambulancia = -1.0
+	r.registrar(_hora(segundos_sim), texto)
+	if r.cuidador != null and is_instance_valid(r.cuidador) and r.cuidador.incidente == r:
+		_radio(r.cuidador, "Recogida completada. Quedamos libres.")
+		_regresar(r.cuidador)
+	r.cuidador = null
+
+
+## Los heridos que esperan pueden empeorar; los detenidos, escaparse.
+func _vigilar_recogidas(delta: float) -> void:
+	for r in incidentes.duplicate():
+		if r.recogida == "" or not r.activo():
+			continue
+		if r.recogida == "heridos":
+			var factor := 0.6 if r.cuidador != null and is_instance_valid(r.cuidador) else 1.0
+			r.t_ambulancia -= delta * factor
+			if r.t_ambulancia <= 0.0:
+				var prob: float = {"tranquila": 0.2, "normal": 0.45, "caotica": 0.65}.get(opciones["dificultad"], 0.45)
+				var texto := ""
+				if randf() < prob:
+					stats["fallecidos"] += 1
+					stats["sucesos"].append({"titulo": "Herido sin traslado (%s)" % r.origen, "resultado": "Un herido ha muerto esperando una ambulancia.", "estrellas": 1, "fallecido": true, "historia": false, "calle": red.calle_de_nodo(r.nodo_real)})
+					texto = "Un herido ha muerto esperando una ambulancia."
+					_sumar_reputacion(-3.0)
+				else:
+					texto = "Los heridos se los ha llevado una ambulancia de fuera, tarde y graves."
+					_sumar_reputacion(-1.5)
+				hud.notificar("%s: %s" % [r.id_incidente, texto], Color("ff6b6b"))
+				_sonido("alerta")
+				_cerrar_recogida(r, texto)
+		else:
+			r.t_custodia += delta
+			if r.t_custodia >= 60.0:
+				r.t_custodia = 0.0
+				var p_escape := 0.2 if r.pendientes <= 3 else 0.4
+				if randf() < p_escape:
+					r.pendientes -= 1
+					hud.notificar("%s: ¡un detenido se ha escapado mientras esperaban el furgón!" % r.id_incidente, Color("ff8a65"))
+					if r.cuidador != null and is_instance_valid(r.cuidador):
+						_radio(r.cuidador, "¡Se nos ha escapado uno! Somos pocos para vigilarlos a todos.")
+					if r.pendientes <= 0:
+						_cerrar_recogida(r, "Todos los detenidos se han escapado.")
 
 
 # ================================================================ MULTAS Y DETENIDOS (0.96)
@@ -3986,6 +4614,11 @@ func _calcular_detenidos(inc, exito: bool) -> void:
 	match inc.categoria:
 		"pelea", "robo":
 			inc.detenidos = 2 if inc.cadena == "huida" or randf() < 0.35 else 1
+			var t_low := String(inc.titulo).to_lower()
+			if t_low.contains("multitud") or t_low.contains("campal") or t_low.contains("bandas") or int(inc.requeridas.get("policia", 0)) >= 3:
+				inc.detenidos = randi_range(5, 10)
+			elif int(inc.requeridas.get("policia", 0)) == 2 and inc.categoria == "pelea":
+				inc.detenidos = randi_range(2, 4)
 		"control":
 			if texto.contains("detenid") or texto.contains("positivo") and randf() < 0.5:
 				inc.detenidos = 2 if inc.cadena == "huida" else 1
@@ -4052,10 +4685,17 @@ func _comision() -> float:
 
 
 func _plazas_detenidos(v) -> int:
-	if v.tipo == "moto":
+	if v.tipo == "moto" or v.aereo or not (v.servicio in ["policia", "geo", "judicial"]):
 		return 0
-	if v.bono == "detenidos":
-		return 4
+	match v.bono:
+		"detenidos":
+			return 4
+		"antidisturbios_geo":
+			return 8
+		"blindado":
+			return 4
+		"tedax", "mando":
+			return 0
 	return 2
 
 
@@ -4072,13 +4712,46 @@ func _llevar_al_calabozo(v, cuantos: int) -> void:
 
 func _detenidos_en_calabozo(v) -> void:
 	var n: int = v.detenidos_a_bordo
-	v.detenidos_a_bordo = 0
+	var hueco := maxi(_plazas_calabozo() - int(partida.get("calabozo", 0)), 0)
+	var entran := mini(n, hueco)
+	partida["calabozo"] = int(partida.get("calabozo", 0)) + entran
 	stats["detenidos"] += n
 	partida["detenidos_total"] = int(partida["detenidos_total"]) + n
-	_radio(v, "%s en el calabozo de la C/ Lentejuela. Volvemos a patrullar." % ("Detenido ingresado" if n == 1 else "%d detenidos ingresados" % n))
 	if int(partida["detenidos_total"]) >= 10:
 		_dar_logro("detenciones")
+	var resto := n - entran
+	if resto > 0:
+		# Calabozo lleno: los que no caben van directos a la cárcel
+		v.detenidos_a_bordo = resto
+		v.fase = "carcel"
+		v.estado = "Trasladando a prisión"
+		v.en_emergencia = false
+		_radio(v, "Calabozo lleno (%d/%d). Llevamos a %d al centro penitenciario." % [int(partida["calabozo"]), _plazas_calabozo(), resto])
+		v.ir_a(nodo_salida)
+		return
+	v.detenidos_a_bordo = 0
+	_radio(v, "%s en el calabozo de la C/ Lentejuela (%d/%d plazas)." % ["Detenido ingresado" if n == 1 else "%d detenidos ingresados" % n, int(partida["calabozo"]), _plazas_calabozo()])
+	hud.set_calabozo(int(partida["calabozo"]), _plazas_calabozo())
 	_regresar(v)
+
+
+## Traslado de presos del calabozo a la cárcel (desde la comisaría).
+func _trasladar_presos() -> void:
+	var mejor = null
+	for v in vehiculos:
+		if v.disponible() and v.servicio == "policia" and _plazas_detenidos(v) > 0 and not v.externo:
+			if mejor == null or _plazas_detenidos(v) > _plazas_detenidos(mejor):
+				mejor = v
+	if mejor == null:
+		hud.notificar("No hay ningún coche o furgón de policía libre para llevar presos a la cárcel.")
+		return
+	mejor.deambular = false
+	mejor.fase = "recoger_presos"
+	mejor.estado = "A por presos"
+	mejor.incidente = null
+	mejor.ir_a(bases["policia"])
+	_radio(mejor, "Vamos a la comisaría a recoger presos para llevarlos al centro penitenciario.")
+	_cerrar_comisaria()
 
 
 # ================================================================ FALLECIMIENTOS Y TRÁMITES
@@ -4091,6 +4764,7 @@ func _liberar_pc(inc) -> void:
 		if is_instance_valid(v) and v.servicio == "proteccion_civil" and v.incidente == inc and v.estado == "En intervención":
 			inc.apoyos.erase(v)
 			v.servicios_seguidos += 1
+			v.xp_turno += 1
 			_radio(v, "Terminado. Protección Civil queda disponible.")
 			_regresar(v)
 
@@ -4122,6 +4796,7 @@ func _abrir_tramites(inc) -> void:
 	for v in (inc.en_lugar + inc.apoyos).duplicate():
 		if is_instance_valid(v) and v.incidente == inc and v != policia:
 			v.servicios_seguidos += 1
+			v.xp_turno += 1
 			_regresar(v)
 	inc.apoyos.clear()
 	_retirar_en_camino(inc, policia == null)
@@ -4171,6 +4846,7 @@ func _fin_tramites(inc) -> void:
 		if is_instance_valid(v) and v.incidente == inc:
 			_radio(v, "Trámites terminados. Quedamos disponibles.")
 			v.servicios_seguidos += 1
+			v.xp_turno += 1
 			_regresar(v)
 	_informe_incidente(inc)
 
@@ -4242,7 +4918,7 @@ func _regresar(v) -> void:
 		v.estado = "Sin personal"
 		v.ir_a(v.nodo_base)
 		return
-	if v.servicio == "policia":
+	if v.servicio == "policia" and not v.aereo:
 		v.patrullar()
 		return
 	v.fase = "regreso"
