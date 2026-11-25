@@ -28,6 +28,27 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Novedades de la versión 2.3 (gráficos y llamadas realistas)
+- **Vehículos dibujados:** cada vehículo tiene su propio dibujo con su rotulación (Policía Local con cuadros azules, ambulancias amarillas con cuadros verdes, bomberos, Guardia Civil, Protección Civil, GEO, UME, helicópteros...). Se ven en el mapa, en las escenas del lugar, en la tienda, en tu flota y en la lista de unidades para mandar. Las luces de emergencia parpadean.
+- **Llamadas más realistas:**
+  - El operador empieza con «112, emergencias. ¿Qué le ocurre?».
+  - Quien llama se traba, repite y deja frases a medias si está muy nervioso, y a veces se oyen cosas de fondo (gritos, el fuego, una alarma...).
+  - Hay personas mayores, jóvenes, gente que habla poco español y, de noche, alguno que ha bebido.
+  - Nuevas respuestas de operador como las de verdad: dirección exacta y referencias, si respira, ponerle de lado si vomita, que alguien espere a la ambulancia en la calle, no mover a un herido de tráfico, chaleco y luces de emergencia, salir agachado si hay humo, no usar el ascensor, pedir una foto en las búsquedas...
+  - Los consejos equivocados ahora son errores creíbles (no tonterías).
+- Los dibujos se generan con `herramientas/dibujar_vehiculos.py`.
+
+## Novedades de la versión 2.2 (la sorpresa)
+- **Colgar llamadas:** Cuadrado durante la llamada. Si era broma, no pasa nada; si era una emergencia real, pierdes reputación, la persona queda sin instrucciones y el aviso se crea con pocos datos.
+- **Bromistas:** al acabar una llamada de broma a veces se localiza el número y sale un aviso «Bromista localizado en…». Mandas una patrulla a su casa y le cae una multa cara (de 600 a 3000 €, más si reincide), con tu comisión. Si tardas, ya no está en casa.
+- **GEO como policía:** el blindado y el antidisturbios cuentan como patrulla en atracos, robos y peleas, detienen y llevan presos al calabozo. Son más rápidos, reducen el riesgo de heridos y no se escapa nadie con ellos presentes. En esos avisos ya no hay crítica de los vecinos.
+- **Arreglo de la ambulancia:** si una unidad que no traslada (VIR, moto) termina y había una ambulancia de camino, la ambulancia ya no se da la vuelta: sigue hasta el herido y se lo lleva.
+- **Detectives:** los casos cerrados se borran de la lista y el menú deja más sitio a las opciones.
+- **Misión del órgano para trasplante:** llamada de la doctora del centro de salud con cuenta atrás; si llegas a tiempo, premio extra de 2500 €.
+- **Persona en el pretil de un puente:** llamada tensa donde importa qué aconsejas por teléfono; hacen falta policía, bomberos y sanitarios.
+- **Perro policía con nombre y fama:** la unidad canina se llama Rex, Thor, Luna... y, a base de servicios bien hechos, sale en la prensa, sube la reputación y trae donativos.
+- **Nuevos villanos que vuelven:** «El Zorro», ladrón de guante blanco, y un chantajista de comercios, con sus pistas y operación final.
+
 ## Novedades de la versión 2.1 (comodidad con el mando)
 - En las tiendas y mejoras puedes pasar por todo aunque no tengas dinero: ves el precio y «te faltan X €».
 - En la ficha de un incidente, las unidades salen agrupadas por servicio (policía, bomberos, ambulancias...) y, dentro de cada uno, de la más cercana a la más lejana. Arriba del todo: «MANDAR LO MÁS CERCANO», que manda de golpe la unidad libre más cercana de cada servicio que falte.

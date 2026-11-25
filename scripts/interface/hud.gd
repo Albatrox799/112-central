@@ -177,7 +177,7 @@ func _dibujar_portada() -> void:
 	var x := fmod(_t_portada * 260.0, ANCHO + 400.0) - 200.0
 	var col := Color(1, 0.2, 0.2, 0.22) if int(_t_portada * 2.0) % 2 == 0 else Color(0.2, 0.45, 1.0, 0.22)
 	portada.draw_rect(Rect2(x, 185, 140, 125), col)
-	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 2.1", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
+	portada.draw_string(f, Vector2(0, ALTO - 50), "Mapa: © colaboradores de OpenStreetMap · Versión 2.3", HORIZONTAL_ALIGNMENT_CENTER, ANCHO, 15, Color(0.75, 0.82, 0.9, 0.7))
 
 
 # ---------------------------------------------------------------- PANTALLA DE CARGA
@@ -516,11 +516,11 @@ func _process(delta: float) -> void:
 		etiqueta_ayuda.text = "Cruceta: elegir   ·   X: confirmar   ·   Círculo: volver"
 	elif llamada_abierta():
 		if escribiendo():
-			etiqueta_ayuda.text = "X: ver todo el texto   ·   L1/R1: Diálogo / Información"
+			etiqueta_ayuda.text = "X: ver todo el texto   ·   L1/R1: Diálogo / Información   ·   Cuadrado: colgar"
 		elif pestana_llamada == 1:
 			etiqueta_ayuda.text = "L1/R1: volver al diálogo"
 		else:
-			etiqueta_ayuda.text = "Cruceta: elegir qué decir   ·   X: decirlo   ·   L1/R1: Diálogo / Información"
+			etiqueta_ayuda.text = "Cruceta: elegir   ·   X: decirlo   ·   L1/R1: Diálogo / Información   ·   Cuadrado: colgar"
 	elif modo_envio != "":
 		etiqueta_ayuda.text = "ENVIANDO %s · Mueve la mira a una emergencia · X: enviar · Círculo: cancelar" % modo_envio
 	elif aviso_llamada.visible:
@@ -681,6 +681,9 @@ func mostrar_panel(titulo: String, texto: String, opciones: Array, centrado: boo
 			b.add_theme_color_override("font_focus_color", Color(0.75, 0.8, 0.87))
 			b.add_theme_color_override("font_hover_color", Color(0.75, 0.8, 0.87))
 			b.pressed.connect(func(): notificar("Ahora no se puede: falta dinero o algún requisito.", Color("ffb3b3")))
+		if o.get("icono") != null:
+			b.icon = o["icono"]
+			b.add_theme_constant_override("icon_max_width", 64)
 		if o.has("color"):
 			b.add_theme_color_override("font_color", o["color"])
 			b.add_theme_color_override("font_focus_color", (o["color"] as Color).lightened(0.3))
@@ -728,6 +731,7 @@ func ocultar_aviso_llamada() -> void:
 func abrir_llamada() -> void:
 	ventana_llamada.visible = true
 	_vaciar(ll_historial)
+	_anadir_historial("Tú", ["112, emergencias. ¿Qué le ocurre?", "Emergencias 112, dígame.", "112, ¿cuál es su emergencia?"][randi() % 3], Color.WHITE)
 	_t_duracion = 0.0
 	_texto_completo = ""
 	_letras = 0.0

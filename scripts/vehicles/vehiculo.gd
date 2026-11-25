@@ -324,22 +324,40 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, 12.0 + (3.0 if parpadeo and emergencia else 0.0), Color(brillo, 0.25))
 	draw_circle(Vector2.ZERO, 4.0, brillo)
 	draw_line(Vector2(0, -4), Vector2(0, -12), Color(placa_color, 0.9), 2.0)
-	# Placa con el vehículo
-	var placa := Rect2(-20, -40, 40, 27)
+	# Tarjeta con el dibujo del vehículo (2.3); si no hay dibujo, la placa de antes
+	var tex: Texture2D = Sprites.textura(tipo, servicio)
+	var placa := Rect2(-31, -45, 62, 32) if tex != null else Rect2(-20, -40, 40, 27)
 	if seleccionado:
 		draw_rect(placa.grow(5.0), Color(1, 1, 1, 0.9), false, 3.0)
 	draw_rect(Rect2(placa.position + Vector2(2, 2), placa.size), Color(0, 0, 0, 0.45))
-	draw_rect(placa, placa_color)
-	draw_rect(placa, Color(1, 1, 1, 0.85), false, 1.5)
+	if tex != null:
+		draw_rect(placa, Color(0.05, 0.09, 0.18, 0.88))
+		draw_rect(placa, placa_color, false, 2.0)
+	else:
+		draw_rect(placa, placa_color)
+		draw_rect(placa, Color(1, 1, 1, 0.85), false, 1.5)
 	draw_colored_polygon(PackedVector2Array([Vector2(-6, -13), Vector2(6, -13), Vector2(0, -6)]), placa_color)
-	_dibujar_silueta(Vector2(0, -26), icono_color)
+	if tex != null:
+		var esp := -1.0 if cos(direccion) < -0.2 else 1.0
+		var zona := Rect2(-28, -43, 56, 26)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(esp, 1.0))
+		draw_texture_rect(tex, zona, false)
+		if emergencia:
+			var l: Vector2 = Sprites.luz(tipo, servicio)
+			var pl := zona.position + Vector2(zona.size.x * l.x, zona.size.y * l.y)
+			var lado := -2.5 if parpadeo else 2.5
+			draw_circle(pl + Vector2(lado, 0), 6.0, Color(0.25, 0.5, 1.0, 0.45))
+			draw_circle(pl + Vector2(lado, 0), 2.2, Color(0.75, 0.88, 1.0))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	else:
+		_dibujar_silueta(Vector2(0, -26), icono_color)
 	# Barra de estado encima de la placa
 	if servicio != "sospechoso":
 		var col_estado: Color = COLORES_ESTADO.get(estado, Color.GRAY)
-		draw_rect(Rect2(-14, -47, 28, 4), col_estado)
+		draw_rect(Rect2(-18, placa.position.y - 6, 36, 4), col_estado)
 		if emergencia and parpadeo:
-			draw_rect(Rect2(-14, -47, 14, 4), Color("ff3030"))
-			draw_rect(Rect2(0, -47, 14, 4), Color("2f6bff"))
+			draw_rect(Rect2(-18, placa.position.y - 6, 18, 4), Color("ff3030"))
+			draw_rect(Rect2(0, placa.position.y - 6, 18, 4), Color("2f6bff"))
 	elif parpadeo:
 		draw_rect(placa.grow(3.0), Color("ff4d6d"), false, 2.0)
 	if aereo:
@@ -351,8 +369,9 @@ func _draw() -> void:
 		if espera_despegue > 0.0:
 			draw_string(f, Vector2(-40, 16), "Despegando…", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, Color.WHITE)
 	if id_unidad != "":
-		draw_string_outline(f, Vector2(-90, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, 4, Color("0a1430"))
-		draw_string(f, Vector2(-90, -52), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color.WHITE)
+		var y_nombre := placa.position.y - 10.0
+		draw_string_outline(f, Vector2(-90, y_nombre), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, 4, Color("0a1430"))
+		draw_string(f, Vector2(-90, y_nombre), id_unidad, HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color.WHITE)
 
 
 ## Silueta lateral del vehículo dentro de la placa (mira hacia donde circula).

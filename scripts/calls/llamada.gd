@@ -30,6 +30,9 @@ var extras_usadas: Array = []
 var coletillas: Array = []       # frases típicas de la personalidad del llamante
 var cortada := false             # la llamada se ha cortado (se sigue rastreando)
 var _ofrecidas: Dictionary = {}  # nodo -> preguntas extra que se ofrecieron allí
+var forma_hablar := "normal"      # 2.3: mayor, joven, borracho, extranjero, normal
+var categoria := "medico"
+var _fondo_usado := false
 
 
 func iniciar(d: Dictionary, vars: Dictionary = {}, p_desenlace: String = "", calma_inicial: int = -1, apertura: String = "") -> void:
@@ -43,13 +46,14 @@ func iniciar(d: Dictionary, vars: Dictionary = {}, p_desenlace: String = "", cal
 
 
 ## Preguntas extra que tienen sentido para esta llamada.
-func preparar_extras(banco: Array, categoria: String) -> void:
+func preparar_extras(banco: Array, categoria_inc: String) -> void:
 	extras.clear()
 	if datos.get("falsa", false) or datos.get("relacionada", false):
 		return
+	categoria = categoria_inc if categoria_inc != "" else categoria
 	for p in banco:
 		var cats: Array = p["cat"]
-		if cats.has("todas") or cats.has(categoria):
+		if cats.has("todas") or cats.has(categoria_inc):
 			extras.append(p)
 	extras.shuffle()
 	# Vuelve a montar las opciones de la primera pantalla con las extra
@@ -103,6 +107,7 @@ func _entrar(id: String) -> void:
 	# Coletilla de la personalidad (a veces)
 	if not es_fin and not coletillas.is_empty() and randf() < 0.3 and not texto_actual.begins_with("("):
 		texto_actual += String(coletillas[randi() % coletillas.size()])
+	texto_actual = _humanizar(texto_actual)
 	opciones_actuales = []
 	if n.get("cuelga", false):
 		cortada = true
@@ -217,10 +222,64 @@ func elegir(indice: int) -> void:
 func _responder_extra(p: Dictionary) -> void:
 	extras_usadas.append(p)
 	var lista: Array = p["nervioso"] if calma < 40 else p["calmo"]
-	texto_actual = _formato(String(lista[randi() % lista.size()]))
+	texto_actual = _humanizar(_formato(String(lista[randi() % lista.size()])))
 	_aplicar(p.get("efectos", {}))
 	var n: Dictionary = datos["nodos"][nodo_actual]
 	_montar_opciones(n)
+
+
+## 2.3: la gente no habla como un libro. Según los nervios y la forma de
+## ser, se traba, repite, deja frases a medias y se oyen cosas de fondo.
+const RELLENOS := ["eh... ", "a ver... ", "o sea... ", "es que... ", "bueno... ", "mire... "]
+const FONDOS := {
+	"medico": ["(se oye a alguien llorando cerca)", "(una mujer grita un nombre de fondo)", "(se oye una respiración ronca)"],
+	"fuego": ["(se oye crepitar el fuego y una alarma)", "(gritos de vecinos y cristales que estallan)", "(tos fuerte)"],
+	"pelea": ["(gritos y golpes de fondo)", "(alguien grita «¡déjalo ya!»)", "(se oyen cristales rotos)"],
+	"robo": ["(susurrando)", "(se oye una alarma sonando)", "(un perro ladra sin parar)"],
+	"atrapado": ["(se oye un claxon que no para)", "(ruido de tráfico y gente gritando)", "(huele a gasolina, dice alguien de fondo)"],
+	"busqueda": ["(se oye a gente llamando a alguien a voces)", "(viento y ruido de coches)"],
+	"control": ["(música muy alta de fondo)", "(motores acelerando)"],
+}
+
+
+func _humanizar(t: String) -> String:
+	if t == "" or t.begins_with("(") or datos.get("relacionada", false):
+		return t
+	var r := t
+	# Muy nervioso: se traba al empezar y repite
+	if calma < 20 and r.length() > 3:
+		var i := 1 if r.begins_with("¡") or r.begins_with("¿") else 0
+		var letra := r.substr(i, 1)
+		if letra.to_lower() != letra.to_upper() and randf() < 0.55:
+			r = r.substr(0, i) + letra + "-" + letra.to_lower() + r.substr(i + 1)
+		if randf() < 0.35:
+			r = r.replace(", ", "... ")
+		if randf() < 0.3:
+			r += [" ¡Por favor, por favor!", " ¡Ay, Dios mío!", " ¡Rápido!"][randi() % 3]
+	elif calma < 45 and randf() < 0.4:
+		r = RELLENOS[randi() % RELLENOS.size()] + r.substr(0, 1).to_lower() + r.substr(1) if not (r.begins_with("¡") or r.begins_with("¿")) else r
+	# Formas de hablar
+	match forma_hablar:
+		"mayor":
+			if randf() < 0.4:
+				r += [" Ay, hijo...", " Perdone, que una ya no está para estos sustos.", " ¿Me oye bien?"][randi() % 3]
+		"joven":
+			if randf() < 0.35:
+				r = r.replace("muy ", "súper ")
+				r += [" En plan, ¡que es muy fuerte!", " Te lo juro.", " ¿Sabes?"][randi() % 3]
+		"borracho":
+			r = r.replace("s ", "sh ").replace("ce", "she")
+			if randf() < 0.5:
+				r += [" (hipo)", " ...que no estoy borracho, ¿eh?", " Escuche... escuche..."][randi() % 3]
+		"extranjero":
+			if randf() < 0.5:
+				r += [" Perdón, mi español no muy bien.", " ¿Usted entiende? Por favor.", ""][randi() % 3]
+	# Algo que se oye de fondo (una vez por llamada)
+	if not _fondo_usado and calma < 60 and randf() < 0.35 and FONDOS.has(categoria):
+		_fondo_usado = true
+		var f: Array = FONDOS[categoria]
+		r += " " + String(f[randi() % f.size()])
+	return r
 
 
 func estado_emocional() -> String:

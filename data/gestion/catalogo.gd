@@ -26,10 +26,10 @@ const VEHICULOS := {
 	"pma": {"nombre": "Puesto Médico Avanzado", "servicio": "ambulancia", "velocidad": 40.0, "plazas": 4, "precio": 80000, "bono": "pma"},
 	"pc_vehiculo": {"nombre": "Vehículo de Protección Civil", "servicio": "proteccion_civil", "velocidad": 50.0, "plazas": 4, "precio": 22000, "bono": "apoyo"},
 	# ---- Unidad de Intervención Especial (tipo GEO): se desbloquea con el rango
-	"geo_blindado": {"nombre": "Blindado GEO", "servicio": "geo", "velocidad": 70.0, "plazas": 6, "precio": 90000, "bono": "blindado", "rango": 2, "inicial": 4},
-	"geo_antidisturbios": {"nombre": "Furgón antidisturbios", "servicio": "geo", "velocidad": 62.0, "plazas": 8, "precio": 60000, "bono": "antidisturbios_geo", "rango": 2, "inicial": 6},
-	"geo_mando": {"nombre": "Mando táctico GEO", "servicio": "geo", "velocidad": 68.0, "plazas": 3, "precio": 50000, "bono": "mando", "rango": 3, "inicial": 3},
-	"geo_tedax": {"nombre": "TEDAX (artificieros)", "servicio": "geo", "velocidad": 62.0, "plazas": 3, "precio": 75000, "bono": "tedax", "rango": 2, "inicial": 3},
+	"geo_blindado": {"nombre": "Blindado GEO", "servicio": "geo", "velocidad": 90.0, "plazas": 6, "precio": 90000, "bono": "blindado", "rango": 2, "inicial": 4},
+	"geo_antidisturbios": {"nombre": "Furgón antidisturbios", "servicio": "geo", "velocidad": 72.0, "plazas": 8, "precio": 60000, "bono": "antidisturbios_geo", "rango": 2, "inicial": 6},
+	"geo_mando": {"nombre": "Mando táctico GEO", "servicio": "geo", "velocidad": 84.0, "plazas": 3, "precio": 50000, "bono": "mando", "rango": 3, "inicial": 3},
+	"geo_tedax": {"nombre": "TEDAX (artificieros)", "servicio": "geo", "velocidad": 78.0, "plazas": 3, "precio": 75000, "bono": "tedax", "rango": 2, "inicial": 3},
 	# ---- UME (Unidad Militar de Emergencias): grandes catástrofes
 	"ume_nrbq": {"nombre": "UME NRBQ (químico y radiactivo)", "servicio": "ume", "velocidad": 52.0, "plazas": 5, "precio": 110000, "bono": "nrbq", "rango": 3, "inicial": 4},
 	"ume_forestal": {"nombre": "UME autobomba forestal pesada", "servicio": "ume", "velocidad": 48.0, "plazas": 5, "precio": 100000, "bono": "forestal", "rango": 3, "inicial": 4},

@@ -385,7 +385,7 @@ func _aparcados(salen: Dictionary = {}) -> Dictionary:
 	_edad_serv.clear()
 	_puerta_serv.clear()
 	var ahora := _ahora()
-	var x := ESCENA.position.x + 46.0
+	var x := ESCENA.position.x + 48.0
 	for u in _unidades:
 		var sv: String = u["servicio"]
 		var edad := ahora - float(u.get("llegada", -1000.0))
@@ -404,7 +404,7 @@ func _aparcados(salen: Dictionary = {}) -> Dictionary:
 			puertas[sv] = p + Vector2(0, -4)
 			_puerta_serv[p + Vector2(0, -4)] = sv
 		_edad_serv[sv] = maxf(float(_edad_serv.get(sv, -1.0)), edad)
-		x += 84.0 if sv == "bomberos" else 72.0
+		x += 88.0
 		if x > ESCENA.end.x - 40.0:
 			break
 	return puertas
@@ -1447,6 +1447,26 @@ func _persona(p: Vector2, tipo: String, pose: String = "pie", fase: float = 0.0,
 
 ## Vehículo visto de lado. p = punto del suelo en el centro.
 func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: String = "") -> void:
+	# Dibujo del vehículo (2.3), salvo los helicópteros, que tienen su animación
+	if not tipo.begins_with("heli_"):
+		var tex: Texture2D = Sprites.textura(tipo, servicio)
+		if tex != null:
+			var ancho := 84.0 if not tipo in ["moto", "moto_sanitaria"] else 70.0
+			var alto := ancho * 60.0 / 128.0
+			var zona := Rect2(-ancho / 2.0, -alto * 52.0 / 60.0, ancho, alto)
+			draw_set_transform(p, 0.0, Vector2(mirando, 1.0))
+			draw_texture_rect(tex, zona, false)
+			if luces and Sprites.LUCES.has(tipo if tipo != "" else String(Sprites.POR_SERVICIO.get(servicio, ""))):
+				var l: Vector2 = Sprites.luz(tipo, servicio)
+				var pl := zona.position + Vector2(zona.size.x * l.x, zona.size.y * l.y)
+				var turno := int(_t * 6.0) % 2 == 0
+				for k in [-1.0, 1.0]:
+					var encendida := (k < 0.0) == turno
+					draw_circle(pl + Vector2(k * 4.0, 0), 10.0 if encendida else 5.0, Color(0.25, 0.5, 1.0, 0.35 if encendida else 0.12))
+					if encendida:
+						draw_circle(pl + Vector2(k * 4.0, 0), 2.6, Color(0.8, 0.9, 1.0))
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			return
 	if tipo in ["camuflado", "canina", "vir", "moto_sanitaria", "moto", "pma", "guardia_civil", "ume", "heli_sanitario", "heli_policia", "heli_bomberos"]:
 		_vehiculo_especial(p, tipo, mirando, luces)
 		return

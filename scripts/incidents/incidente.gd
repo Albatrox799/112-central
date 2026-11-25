@@ -18,6 +18,7 @@ var traslado := false          # la ambulancia lleva al herido al hospital
 # Mini evento "En el lugar"
 var categoria := "medico"       # medico, pelea, robo, fuego, busqueda, atrapado, control
 var requeridas: Dictionary = {} # servicio -> unidades necesarias
+var premio := 0   # dinero extra al resolver bien (misiones especiales)
 var presentes: Dictionary = {}  # servicio -> unidades en el lugar
 var en_lugar: Array = []        # vehículos trabajando en el lugar
 var evento := ""                # "", en_curso, refuerzos, terminado
