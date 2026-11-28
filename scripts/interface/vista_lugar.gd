@@ -1461,10 +1461,10 @@ func _vehiculo(p: Vector2, servicio: String, mirando: float, luces: bool, tipo: 
 				var pl := zona.position + Vector2(zona.size.x * l.x, zona.size.y * l.y)
 				var turno := int(_t * 6.0) % 2 == 0
 				for k in [-1.0, 1.0]:
-					var encendida := (k < 0.0) == turno
-					draw_circle(pl + Vector2(k * 4.0, 0), 10.0 if encendida else 5.0, Color(0.25, 0.5, 1.0, 0.35 if encendida else 0.12))
+					var encendida: bool = (float(k) < 0.0) == turno
+					draw_circle(pl + Vector2(float(k) * 4.0, 0), 10.0 if encendida else 5.0, Color(0.25, 0.5, 1.0, 0.35 if encendida else 0.12))
 					if encendida:
-						draw_circle(pl + Vector2(k * 4.0, 0), 2.6, Color(0.8, 0.9, 1.0))
+						draw_circle(pl + Vector2(float(k) * 4.0, 0), 2.6, Color(0.8, 0.9, 1.0))
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			return
 	if tipo in ["camuflado", "canina", "vir", "moto_sanitaria", "moto", "pma", "guardia_civil", "ume", "heli_sanitario", "heli_policia", "heli_bomberos"]:

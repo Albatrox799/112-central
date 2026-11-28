@@ -28,6 +28,9 @@ Unidades iniciales: A-01 y A-02 (ambulancias), P-01 y P-02 (policía), B-01 (bom
 - **Heridos**: en peleas y robos un agente puede resultar herido y quedarse de baja 2 turnos.
 
 
+## Versión 2.3.1
+- Arreglo: el juego se quedaba en el mapa sin abrir el menú (un fallo en el dibujo de las luces de los vehículos impedía cargar las escenas).
+
 ## Novedades de la versión 2.3 (gráficos y llamadas realistas)
 - **Vehículos dibujados:** cada vehículo tiene su propio dibujo con su rotulación (Policía Local con cuadros azules, ambulancias amarillas con cuadros verdes, bomberos, Guardia Civil, Protección Civil, GEO, UME, helicópteros...). Se ven en el mapa, en las escenas del lugar, en la tienda, en tu flota y en la lista de unidades para mandar. Las luces de emergencia parpadean.
 - **Llamadas más realistas:**
